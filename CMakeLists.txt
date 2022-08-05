@@ -128,10 +128,12 @@ set(LIBRARY_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib)
 add_executable(waypoint_nav src/waypoint_nav.cpp)
 add_executable(waypoint_tsp src/waypoint_tsp.cpp)
 add_executable(waypoint_square src/waypoint_square.cpp)
+add_executable(waypoint_offboard src/waypoint_offboard.cpp)
 
 target_link_libraries(waypoint_nav ${catkin_LIBRARIES})
 target_link_libraries(waypoint_tsp ${catkin_LIBRARIES})
 target_link_libraries(waypoint_square ${catkin_LIBRARIES})
+target_link_libraries(waypoint_offboard ${catkin_LIBRARIES})
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
 #   src/${PROJECT_NAME}/drone_navigation.cpp
