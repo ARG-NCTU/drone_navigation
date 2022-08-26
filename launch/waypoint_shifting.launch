@@ -1,0 +1,17 @@
+<launch>
+    <!-- node_name equal to different mode: waypoint_shifting / waypoint_rotate / waypoint_heading / waypoint_pose -->
+    <arg name="node_name" default="waypoint_heading"/>
+    <!-- if script_enable is true, follow waypoints in script file -->
+    <!-- if script_enable is false, follow drone/move_base_simple/goal in rviz -->
+    <arg name="script_enable" default="true"/>  
+
+    <arg name="setting_file" default="setting_shift_and_rotate.yaml"/>
+    <arg name="script_file" default="script_square.yaml"/>
+
+    <node pkg="drone_navigation" type="waypoint_cruise" name="$(arg node_name)" clear_params="true" output="screen">
+        <param name="mode" value="$(arg node_name)"/>
+        <param name="script_enable" value="$(arg script_enable)"/>
+        <rosparam file="$(find drone_navigation)/config/$(arg setting_file)"/>
+        <rosparam file="$(find drone_navigation)/config/$(arg script_file)"/>
+    </node>
+</launch>

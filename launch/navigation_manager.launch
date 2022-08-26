@@ -1,0 +1,5 @@
+<launch>
+    <arg name="node_name" default="navigation_manager"/>
+    <node pkg="drone_navigation" type="navigation_manager" name="$(arg node_name)" clear_params="true" output="screen">
+    </node>
+</launch>
