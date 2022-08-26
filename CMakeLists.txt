@@ -8,12 +8,15 @@ project(drone_navigation)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
+  mavros_msgs
+  visualization_msgs
   geometry_msgs
   roscpp
   rospy
   std_msgs
   ros_tsp
   behavior_tree
+  message_generation
 )
 
 ## System dependencies are found with CMake's conventions
@@ -50,11 +53,10 @@ find_package(catkin REQUIRED COMPONENTS
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
-#   Message2.msg
-# )
+add_message_files(
+  FILES
+  droneWaypoint.msg
+)
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -71,10 +73,11 @@ find_package(catkin REQUIRED COMPONENTS
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   geometry_msgs#   std_msgs
-# )
+generate_messages(
+  DEPENDENCIES
+  geometry_msgs
+  std_msgs
+)
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -108,7 +111,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES drone_navigation
-#  CATKIN_DEPENDS geometry_msgs roscpp rospy std_msgs
+ CATKIN_DEPENDS geometry_msgs roscpp rospy std_msgs message_runtime
 #  DEPENDS system_lib
 )
 
@@ -127,11 +130,17 @@ set(LIBRARY_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib)
 
 add_executable(waypoint_nav src/waypoint_nav.cpp)
 add_executable(waypoint_tsp src/waypoint_tsp.cpp)
-add_executable(waypoint_square src/waypoint_square.cpp)
+add_executable(waypoint_cruise src/waypoint_cruise.cpp)
+add_executable(waypoint_landing src/waypoint_landing.cpp)
+add_executable(waypoint_circular src/waypoint_circular.cpp)
+add_executable(navigation_manager src/navigation_manager.cpp)
 
 target_link_libraries(waypoint_nav ${catkin_LIBRARIES})
 target_link_libraries(waypoint_tsp ${catkin_LIBRARIES})
-target_link_libraries(waypoint_square ${catkin_LIBRARIES})
+target_link_libraries(waypoint_cruise ${catkin_LIBRARIES})
+target_link_libraries(waypoint_landing ${catkin_LIBRARIES})
+target_link_libraries(waypoint_circular ${catkin_LIBRARIES})
+target_link_libraries(navigation_manager ${catkin_LIBRARIES})
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
 #   src/${PROJECT_NAME}/drone_navigation.cpp
