@@ -1,6 +1,11 @@
 std_msgs/Header header
 geometry_msgs/Pose pose
 bool pose_enable
+bool rotate_enable
 bool heading_enable
+bool last_waypoint
+string planner_name
+string origin
+uint32 planner_seq
 float32 distance_margin 
 float32 heading_margin
