@@ -1,0 +1,44 @@
+<launch>
+    <!-- node_name equal to name in behavior tree -->
+    <arg name="node_name" default="explore_circular"/>
+
+    <!-- mode: waypoint_shifting / waypoint_rotate / waypoint_heading / waypoint_pose -->
+    <arg name="mode_name" default="waypoint_pose"/>
+
+    <!-- origin: drone (position relative to current drone state) / map (position relative to origin tf) -->
+    <arg name="origin" default="drone"/>
+
+    <!-- if script_enable is true, follow waypoints in script file -->
+    <!-- if script_enable is false, follow drone/move_base_simple/goal in rviz -->
+    <arg name="script_enable" default="true"/>  
+
+    <!-- cruise height will affect drone's height when script_enable is false -->
+    <arg name="cruise_height" default="9.0"/> 
+
+    <!-- distance_margin & heading_margin effect how precise the drone's position is -->
+    <arg name="distance_margin" default="0.5"/>  
+    <arg name="heading_margin" default="0.017"/> 
+
+    <!-- script contains multiple waypoints -->
+    <arg name="script_file" default="script_circular.yaml"/>
+
+    <node pkg="drone_navigation" type="waypoint_cruise" name="$(arg node_name)" clear_params="true" output="screen">
+        <!-- <remap from="move_base_simple/goal" to="perception_result/goal"/> -->
+        <param name="mode" value="$(arg mode_name)"/>
+        <param name="origin" value="$(arg origin)"/>
+        <param name="script_enable" value="$(arg script_enable)"/>
+        <param name="cruise_height" value="$(arg cruise_height)"/>
+        <param name="distance_margin" value="$(arg distance_margin)"/>
+        <param name="heading_margin" value="$(arg heading_margin)"/>
+        <rosparam file="$(find drone_navigation)/config/$(arg script_file)"/>
+    </node>
+
+    <node pkg="behavior_tree_extra" type="state_buffer" name="$(arg node_name)_finished" clear_params="true" output="screen">
+        <remap from="waypoint/state" to="$(arg node_name)_running_success"/>
+        <remap from="state_manager/reset" to="state_manager/reset_$(arg node_name)"/>
+    </node>
+
+    <node pkg="behavior_tree_extra" type="state_reset" name="$(arg node_name)_reset" clear_params="true" output="screen">
+        <remap from="state_manager/reset" to="state_manager/reset_$(arg node_name)"/>
+    </node>
+</launch>
