@@ -1,10 +1,11 @@
 #include <iostream>
+#include <math.h>
 
 #include <ros/ros.h>
 #include <tf/tf.h>
 #include <std_msgs/Bool.h>
 #include <geometry_msgs/PoseStamped.h>
-#include <mavros_msgs/State.h>
+#include <behavior_tree/behavior_tree.h>
 #include <drone_navigation/droneWaypoint.h>
 
 #define PI 3.14159265
@@ -18,28 +19,45 @@ class Navigation{
         ros::Publisher pub_is_finish;
         ros::Subscriber sub_subgoal;
         ros::Subscriber sub_pose;
+        
 
-        float current_pose[7];
-        float current_goal[7];
-        float distance_margin = 0.0;
-        float heading_margin = 0.0;
+        float drone_origin_pose[7] = {0, 0, 0, 0, 0, 0, 0};
+        float current_pose[7] = {0, 0, 0, 0, 0, 0, 0};
+        float last_goal[7] = {-1, -1, -1, -1, -1, -1, -1};
+        float current_goal[7] = {0, 0, 0, 0, 0, 0, 0};
+        float distance_margin = 0.8;
+        float heading_margin = 0.017;
+        unsigned int planner_seq = 0;
+        string planner_name = "none";
         bool pose_enable = false;
+        bool rotate_enable = false;
         bool heading_enable = false;
+        bool last_waypoint = false;
+        bool drone_as_origin = false;
+        bool condition_status = true;
 
     public:
+        bt::Condition condition;
         Navigation();
         void positionCallback(const geometry_msgs::PoseStamped::ConstPtr& msg);
         void subgoalCallback(const drone_navigation::droneWaypoint::ConstPtr& msg);
+
+        
+        void euler2quaternion(float yaw, float *x, float *y, float *z, float *w);
+        void quaternion2euler(float *roll, float *pitch, float *yaw, float x, float y, float z, float w);
+        float distanceP2P(float *p1, float *p2);
+        float headingP2P(float *p1, float *p2);
+
         void margincheck();
         void navigation();
         void cmdRotate();
         void cmdShift();
         void cmdPose();
-        float distanceP2P(float *p1, float *p2);
-        float headingP2P(float *p1, float *p2);
+
+        void conditionSet(bool state);
 };
 
-Navigation :: Navigation(){
+Navigation :: Navigation() : condition("navigation_running"){
     pub_goalpoint = n.advertise<geometry_msgs::PoseStamped>("mavros/setpoint_position/local", 10);
     pub_is_finish = n.advertise<std_msgs::Bool>("navigation_manager/is_finish", 10);
     sub_subgoal = n.subscribe<drone_navigation::droneWaypoint>("waypoint_planner/drone_waypoint", 1,  &Navigation::subgoalCallback, this);
@@ -58,17 +76,108 @@ void Navigation :: positionCallback(const geometry_msgs::PoseStamped::ConstPtr& 
 }
 
 void Navigation :: subgoalCallback(const drone_navigation::droneWaypoint::ConstPtr& msg){
-    current_goal[0] = msg->pose.position.x;
-    current_goal[1] = msg->pose.position.y;
-    current_goal[2] = msg->pose.position.z;
-    current_goal[3] = msg->pose.orientation.x;
-    current_goal[4] = msg->pose.orientation.y;
-    current_goal[5] = msg->pose.orientation.z;
-    current_goal[6] = msg->pose.orientation.w;
     pose_enable = msg->pose_enable;
+    rotate_enable = msg->rotate_enable;
     heading_enable = msg->heading_enable;
+    last_waypoint = msg->last_waypoint;
     distance_margin = msg->distance_margin;
     heading_margin = msg->heading_margin;
+    if((msg->origin == (string)"drone" && rotate_enable) || (heading_enable && rotate_enable)){
+        // if(!drone_as_origin){
+        //     drone_as_origin = true;
+        //     for(int i = 0; i < 7; i++){ drone_origin_pose[i] = current_pose[i]; }
+        // }
+        if((msg->planner_name != planner_name) || (msg->planner_seq != planner_seq)){
+            planner_name = msg->planner_name;
+            planner_seq = msg->planner_seq;
+            for(int i = 0; i < 7; i++){ drone_origin_pose[i] = current_pose[i]; }
+        }
+        if(heading_enable){
+            float origin_r, origin_p, origin_y, rotate_y, new_x, new_y, new_z, new_w;
+            quaternion2euler(&origin_r, &origin_p, &origin_y, 
+                            drone_origin_pose[3], 
+                            drone_origin_pose[4], 
+                            drone_origin_pose[5], 
+                            drone_origin_pose[6]);
+            float v1[2], v2[2];
+            v1[0] = 1; 
+            v1[1] = 0;
+            v2[0] = current_goal[0] - current_pose[0];
+            v2[1] = current_goal[1] - current_pose[1];
+            rotate_y = acos(v2[0] / sqrt(powf(v2[0], 2) + powf(v2[1], 2)));
+            // cout << "heading angle: " << (rotate_y) * 180 / PI << endl;
+            euler2quaternion(rotate_y, 
+                            &new_x, 
+                            &new_y, 
+                            &new_z, 
+                            &new_w);
+            current_goal[0] = drone_origin_pose[0] + msg->pose.position.x;
+            current_goal[1] = drone_origin_pose[1] + msg->pose.position.y;
+            current_goal[2] = drone_origin_pose[2] + msg->pose.position.z;
+            current_goal[3] = new_x;
+            current_goal[4] = new_y;
+            current_goal[5] = new_z;
+            current_goal[6] = new_w;
+        }else{
+            float origin_r, origin_p, origin_y, cmd_r, cmd_p, cmd_y, new_x, new_y, new_z, new_w;
+            quaternion2euler(&origin_r, &origin_p, &origin_y, 
+                            drone_origin_pose[3], 
+                            drone_origin_pose[4], 
+                            drone_origin_pose[5], 
+                            drone_origin_pose[6]);
+            quaternion2euler(&cmd_r, &cmd_p, &cmd_y, 
+                            msg->pose.orientation.x, 
+                            msg->pose.orientation.y, 
+                            msg->pose.orientation.z, 
+                            msg->pose.orientation.w);
+            euler2quaternion(origin_y + cmd_y, 
+                            &new_x, 
+                            &new_y, 
+                            &new_z, 
+                            &new_w);
+            if(msg->pose.position.x == 0){
+                if(msg->pose.position.y >= 0){
+                    current_goal[0] = drone_origin_pose[0] + 
+                                sqrt(powf(msg->pose.position.y, 2)) * cos(origin_y + PI / 2);
+                    current_goal[1] = drone_origin_pose[1] + 
+                                sqrt(powf(msg->pose.position.y, 2)) * sin(origin_y + PI / 2);
+                }else{
+                    current_goal[0] = drone_origin_pose[0] + 
+                                sqrt(powf(msg->pose.position.y, 2)) * cos(origin_y - PI / 2);
+                    current_goal[1] = drone_origin_pose[1] + 
+                                sqrt(powf(msg->pose.position.y, 2)) * sin(origin_y - PI / 2);
+                }
+            }else{
+                current_goal[0] = drone_origin_pose[0] + 
+                                sqrt(powf(msg->pose.position.x, 2) + powf(msg->pose.position.y, 2)) * 
+                                cos(origin_y + atan(msg->pose.position.y / msg->pose.position.x));
+                current_goal[1] = drone_origin_pose[1] + 
+                                sqrt(powf(msg->pose.position.x, 2) + powf(msg->pose.position.y, 2)) * 
+                                sin(origin_y + atan(msg->pose.position.y / msg->pose.position.x));
+            }
+            current_goal[2] = drone_origin_pose[2] + msg->pose.position.z;
+            current_goal[3] = new_x;
+            current_goal[4] = new_y;
+            current_goal[5] = new_z;
+            current_goal[6] = new_w;
+        }
+    }else if(msg->origin == (string)"map"){
+        if(drone_as_origin){
+            drone_as_origin = false;
+        }
+        current_goal[0] = msg->pose.position.x;
+        current_goal[1] = msg->pose.position.y;
+        current_goal[2] = msg->pose.position.z;
+        current_goal[3] = msg->pose.orientation.x;
+        current_goal[4] = msg->pose.orientation.y;
+        current_goal[5] = msg->pose.orientation.z;
+        current_goal[6] = msg->pose.orientation.w;
+        planner_name = msg->planner_name;
+        planner_seq = msg->planner_seq;
+    }
+    // if(last_waypoint){
+    //     drone_as_origin = false;
+    // }
     return;
 }
 
@@ -87,15 +196,27 @@ void Navigation :: cmdRotate(){
 }
 
 void Navigation :: cmdShift(){
+    double roll, pitch, yaw;
+    tf::Quaternion q(
+        current_pose[3],
+        current_pose[4],
+        current_pose[5],
+        current_pose[6]);
+    tf::Matrix3x3 m(q);
+    m.getRPY(roll, pitch, yaw);
+    tf::Quaternion q_new;
+    q_new.setRPY(0, 0, yaw);
+    q_new = q_new.normalize();
+    
     geometry_msgs::PoseStamped pub_msg_goal;
     pub_msg_goal.header.frame_id = "local_origin";
     pub_msg_goal.pose.position.x = current_goal[0];
     pub_msg_goal.pose.position.y = current_goal[1];
     pub_msg_goal.pose.position.z = current_goal[2];
-    pub_msg_goal.pose.orientation.x = current_pose[3];
-    pub_msg_goal.pose.orientation.y = current_pose[4];
-    pub_msg_goal.pose.orientation.z = current_pose[5];
-    pub_msg_goal.pose.orientation.w = current_pose[6];
+    pub_msg_goal.pose.orientation.x = q_new.getX();
+    pub_msg_goal.pose.orientation.y = q_new.getY();
+    pub_msg_goal.pose.orientation.z = q_new.getZ();
+    pub_msg_goal.pose.orientation.w = q_new.getW();
     pub_goalpoint.publish(pub_msg_goal);
     return;
 }
@@ -114,70 +235,110 @@ void Navigation :: cmdPose(){
     return;
 }
 
+void Navigation :: euler2quaternion(float yaw, float *x, float *y, float *z, float *w){
+    tf::Quaternion q;
+    q.setRPY(0, 0, yaw);
+    q = q.normalize();
+    *x = q.getX();
+    *y = q.getY();
+    *z = q.getZ();
+    *w = q.getW();
+    return;
+}
+
+void Navigation :: quaternion2euler(float *roll, float *pitch, float *yaw, float x, float y, float z, float w){
+    double tmp_r, tmp_p, tmp_y;
+    tf::Quaternion q(x, y, z, w);
+    tf::Matrix3x3 m(q);
+    m.getRPY(tmp_r, tmp_p, tmp_y);
+    *roll = (float)tmp_r;
+    *pitch = (float)tmp_p;
+    *yaw = (float)tmp_y;
+    return;
+}
+
 float Navigation :: distanceP2P(float *p1, float *p2){
     return sqrt(powf(abs(p1[0] - p2[0]), 2) + powf(abs(p1[1] - p2[1]), 2) + powf(abs(p1[2] - p2[2]), 2));
 }
 
 float Navigation :: headingP2P(float *p1, float *p2){
-    double p1_rpy[3], p2_rpy[3];
-    tf::Quaternion q_p1(
-        p1[3],
-        p1[4],
-        p1[5],
-        p1[6]);
-    tf::Matrix3x3 m_1(q_p1);
-    m_1.getRPY(p1_rpy[0], p1_rpy[1], p1_rpy[2]);
-
-    tf::Quaternion q_p2(
-        p2[3],
-        p2[4],
-        p2[5],
-        p2[6]);
-    tf::Matrix3x3 m_2(q_p2);
-    m_2.getRPY(p2_rpy[0], p2_rpy[1], p2_rpy[2]);
-
-    return abs((float)p1_rpy[2] - (float)p2_rpy[2]);
+    float p1_r, p1_p, p1_y, p2_r, p2_p, p2_y;
+    quaternion2euler(&p1_r, &p1_p, &p1_y, p1[3], p1[4], p1[5], p1[6]);
+    quaternion2euler(&p2_r, &p2_p, &p2_y, p2[3], p2[4], p2[5], p2[6]);
+    return abs(p1_y - p2_y);
 }
 
 void Navigation :: margincheck(){
-    if(~pose_enable && ~heading_enable){
-        cout << "ERROR: No margin define" << endl;
-    }else if(pose_enable && heading_enable){
-        if(distanceP2P(current_pose, current_goal) < distance_margin && headingP2P(current_pose, current_goal) < heading_margin){
+    int checkbit = 0;
+    
+    for(int i = 0; i < 7; i++){ if(last_goal[i] != current_goal[i]){ checkbit++; } }
+
+    if(!pose_enable && !rotate_enable){
+        return;
+    }else if(pose_enable && rotate_enable){
+        if(checkbit > 0){ condition_status = true; }
+        if(distanceP2P(current_pose, current_goal) < distance_margin 
+            && headingP2P(current_pose, current_goal) < heading_margin
+            && checkbit > 0){
+            for(int i = 0; i < 7; i++){ last_goal[i] = current_goal[i]; }
             std_msgs::Bool pub_msg_state;
             pub_msg_state.data = true;
             pub_is_finish.publish(pub_msg_state);
+            ROS_INFO("tick:   %s", planner_name.c_str());
+            if(last_waypoint){ ROS_INFO("finish: %s", planner_name.c_str()); condition_status = false;}
         }
     }else if(pose_enable){
-        if(distanceP2P(current_pose, current_goal) < distance_margin){
+        if(checkbit > 0){ condition_status = true; }
+        if(distanceP2P(current_pose, current_goal) < distance_margin
+            && checkbit > 0){
+            for(int i = 0; i < 7; i++){ last_goal[i] = current_goal[i]; }
             std_msgs::Bool pub_msg_state;
             pub_msg_state.data = true;
             pub_is_finish.publish(pub_msg_state);
+            ROS_INFO("tick:   %s", planner_name.c_str());
+            if(last_waypoint){ ROS_INFO("finish: %s", planner_name.c_str()); condition_status = false;}
         }
-    }else{
-        if(headingP2P(current_pose, current_goal) < heading_margin){
+    }else if(rotate_enable){
+        if(checkbit > 0){ condition_status = true; }
+        if(headingP2P(current_pose, current_goal) < heading_margin
+            && checkbit > 0){
+            for(int i = 0; i < 7; i++){ last_goal[i] = current_goal[i]; }
             std_msgs::Bool pub_msg_state;
             pub_msg_state.data = true;
             pub_is_finish.publish(pub_msg_state);
-        }       
+            ROS_INFO("tick:   %s", planner_name.c_str());
+            if(last_waypoint){ ROS_INFO("finish: %s", planner_name.c_str()); condition_status = false;}
+        }
     }
     return;
 }
 
+void Navigation :: conditionSet(bool state){
+    condition.set(state);
+    condition.publish();
+    return;
+}
+
 void Navigation :: navigation(){
+    ros::Rate rate(30);
     margincheck();
-    if(pose_enable && heading_enable){
+
+
+    if(pose_enable && rotate_enable){
         cmdPose();
     }else if(pose_enable){
         cmdShift();
     }else{
         cmdRotate();
     }
+    conditionSet(condition_status);
+    rate.sleep();
     return;
 }
 
 int main(int argc, char **argv){
     ros::init(argc, argv, "navigation");
+    
     Navigation uav;
     while(ros::ok()){
         uav.navigation();
