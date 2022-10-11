@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   ros_tsp
   behavior_tree
+  behavior_tree_extra
   message_generation
 )
 
@@ -130,27 +131,18 @@ set(LIBRARY_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib)
 
 add_executable(waypoint_nav src/waypoint_nav.cpp)
 add_executable(waypoint_tsp src/waypoint_tsp.cpp)
-<<<<<<< HEAD
 add_executable(waypoint_cruise src/waypoint_cruise.cpp)
 add_executable(waypoint_landing src/waypoint_landing.cpp)
-add_executable(waypoint_circular src/waypoint_circular.cpp)
 add_executable(navigation_manager src/navigation_manager.cpp)
+add_executable(visualize_path src/visualize_path.cpp)
 
 target_link_libraries(waypoint_nav ${catkin_LIBRARIES})
 target_link_libraries(waypoint_tsp ${catkin_LIBRARIES})
 target_link_libraries(waypoint_cruise ${catkin_LIBRARIES})
 target_link_libraries(waypoint_landing ${catkin_LIBRARIES})
-target_link_libraries(waypoint_circular ${catkin_LIBRARIES})
 target_link_libraries(navigation_manager ${catkin_LIBRARIES})
-=======
-add_executable(waypoint_square src/waypoint_square.cpp)
-add_executable(waypoint_offboard src/waypoint_offboard.cpp)
+target_link_libraries(visualize_path ${catkin_LIBRARIES})
 
-target_link_libraries(waypoint_nav ${catkin_LIBRARIES})
-target_link_libraries(waypoint_tsp ${catkin_LIBRARIES})
-target_link_libraries(waypoint_square ${catkin_LIBRARIES})
-target_link_libraries(waypoint_offboard ${catkin_LIBRARIES})
->>>>>>> 40fe1c6c8a41e4d68addb6746c8648a64071d781
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
 #   src/${PROJECT_NAME}/drone_navigation.cpp
