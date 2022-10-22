@@ -4,6 +4,7 @@
 #include <ros/ros.h>
 #include <tf/tf.h>
 #include <std_msgs/Bool.h>
+#include <std_msgs/Float32.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <behavior_tree/behavior_tree.h>
 #include <drone_navigation/droneWaypoint.h>
@@ -19,6 +20,7 @@ class Navigation{
         ros::Publisher pub_is_finish;
         ros::Subscriber sub_subgoal;
         ros::Subscriber sub_pose;
+        ros::Subscriber sub_height_offset;
         
 
         float drone_origin_pose[7] = {0, 0, 0, 0, 0, 0, 0};
@@ -27,8 +29,10 @@ class Navigation{
         float current_goal[7] = {0, 0, 0, 0, 0, 0, 0};
         float distance_margin = 0.8;
         float heading_margin = 0.017;
+        float height_offset = 0;
         unsigned int planner_seq = 0;
         string planner_name = "none";
+        bool height_estimate_enable = false;
         bool pose_enable = false;
         bool rotate_enable = false;
         bool heading_enable = false;
@@ -39,9 +43,11 @@ class Navigation{
     public:
         bt::Condition condition;
         Navigation();
+        void getParam();
         void positionCallback(const geometry_msgs::PoseStamped::ConstPtr& msg);
+        void heightCallback(const std_msgs::Float32::ConstPtr& msg);
         void subgoalCallback(const drone_navigation::droneWaypoint::ConstPtr& msg);
-
+        
         
         void euler2quaternion(float yaw, float *x, float *y, float *z, float *w);
         void quaternion2euler(float *roll, float *pitch, float *yaw, float x, float y, float z, float w);
@@ -62,6 +68,14 @@ Navigation :: Navigation() : condition("navigation_running"){
     pub_is_finish = n.advertise<std_msgs::Bool>("navigation_manager/is_finish", 10);
     sub_subgoal = n.subscribe<drone_navigation::droneWaypoint>("waypoint_planner/drone_waypoint", 1,  &Navigation::subgoalCallback, this);
     sub_pose = n.subscribe<geometry_msgs::PoseStamped>("mavros/local_position/pose", 1,  &Navigation::positionCallback, this);
+    sub_height_offset = n.subscribe<std_msgs::Float32>("height_offset", 1,  &Navigation::heightCallback, this);
+}
+
+
+void Navigation :: getParam(){
+    string node_ns = ros::this_node::getName();
+    n.getParam("/" + node_ns + "/height_estimate_enable", height_estimate_enable);
+    return;
 }
 
 void Navigation :: positionCallback(const geometry_msgs::PoseStamped::ConstPtr& msg){
@@ -72,6 +86,13 @@ void Navigation :: positionCallback(const geometry_msgs::PoseStamped::ConstPtr& 
     current_pose[4] = msg->pose.orientation.y;
     current_pose[5] = msg->pose.orientation.z;
     current_pose[6] = msg->pose.orientation.w;
+    return;
+}
+
+void Navigation :: heightCallback(const std_msgs::Float32::ConstPtr& msg){
+    if(height_estimate_enable){
+        height_offset = msg->data;
+    }
     return;
 }
 
@@ -183,10 +204,10 @@ void Navigation :: subgoalCallback(const drone_navigation::droneWaypoint::ConstP
 
 void Navigation :: cmdRotate(){
     geometry_msgs::PoseStamped pub_msg_goal;
-    pub_msg_goal.header.frame_id = "local_origin";
+    pub_msg_goal.header.frame_id = "map";
     pub_msg_goal.pose.position.x = current_pose[0];
     pub_msg_goal.pose.position.y = current_pose[1];
-    pub_msg_goal.pose.position.z = current_pose[2];
+    pub_msg_goal.pose.position.z = current_pose[2] + height_offset;
     pub_msg_goal.pose.orientation.x = current_goal[3];
     pub_msg_goal.pose.orientation.y = current_goal[4];
     pub_msg_goal.pose.orientation.z = current_goal[5];
@@ -209,10 +230,10 @@ void Navigation :: cmdShift(){
     q_new = q_new.normalize();
     
     geometry_msgs::PoseStamped pub_msg_goal;
-    pub_msg_goal.header.frame_id = "local_origin";
+    pub_msg_goal.header.frame_id = "map";
     pub_msg_goal.pose.position.x = current_goal[0];
     pub_msg_goal.pose.position.y = current_goal[1];
-    pub_msg_goal.pose.position.z = current_goal[2];
+    pub_msg_goal.pose.position.z = current_goal[2] + height_offset;
     pub_msg_goal.pose.orientation.x = q_new.getX();
     pub_msg_goal.pose.orientation.y = q_new.getY();
     pub_msg_goal.pose.orientation.z = q_new.getZ();
@@ -223,10 +244,10 @@ void Navigation :: cmdShift(){
 
 void Navigation :: cmdPose(){
     geometry_msgs::PoseStamped pub_msg_goal;
-    pub_msg_goal.header.frame_id = "local_origin";
+    pub_msg_goal.header.frame_id = "map";
     pub_msg_goal.pose.position.x = current_goal[0];
     pub_msg_goal.pose.position.y = current_goal[1];
-    pub_msg_goal.pose.position.z = current_goal[2];
+    pub_msg_goal.pose.position.z = current_goal[2] + height_offset;
     pub_msg_goal.pose.orientation.x = current_goal[3];
     pub_msg_goal.pose.orientation.y = current_goal[4];
     pub_msg_goal.pose.orientation.z = current_goal[5];
@@ -340,6 +361,7 @@ int main(int argc, char **argv){
     ros::init(argc, argv, "navigation");
     
     Navigation uav;
+    uav.getParam();
     while(ros::ok()){
         uav.navigation();
         ros::spinOnce();

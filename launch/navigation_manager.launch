@@ -1,6 +1,11 @@
 <launch>
+    <!-- if height_estimate is true(in physic environment), pkg <drone_resilient_height> is required.  -->
+    <!-- if height_estimate is false(in simulated environment), height is always correct.  -->
+    <arg name="height_estimate" default="true"/>
     <arg name="node_name" default="navigation_manager"/>
     <node pkg="drone_navigation" type="navigation_manager" name="$(arg node_name)" clear_params="true" output="screen">
+        <param name="height_estimate" value="$(arg height_estimate)"/>
+        <remap from="height_offset" to="height_estimator/relative_height"/>
     </node>
     <node pkg="drone_navigation" type="visualize_path" name="visualize_path" clear_params="true" output="screen">
     </node>

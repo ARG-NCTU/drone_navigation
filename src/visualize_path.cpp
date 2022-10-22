@@ -39,7 +39,7 @@ void Visualize :: pathVisualize(){
     visualization_msgs::MarkerArray pub_visual_path;
 
     visualization_msgs::Marker marker;
-    marker.header.frame_id = "local_origin";
+    marker.header.frame_id = "drone_origin";
     marker.header.stamp = ros::Time::now();
     marker.ns = "path";
     marker.id = m_index;
