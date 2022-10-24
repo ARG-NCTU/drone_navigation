@@ -207,7 +207,7 @@ void Navigation :: cmdRotate(){
     pub_msg_goal.header.frame_id = "map";
     pub_msg_goal.pose.position.x = current_pose[0];
     pub_msg_goal.pose.position.y = current_pose[1];
-    pub_msg_goal.pose.position.z = current_pose[2] + height_offset;
+    pub_msg_goal.pose.position.z = current_pose[2];
     pub_msg_goal.pose.orientation.x = current_goal[3];
     pub_msg_goal.pose.orientation.y = current_goal[4];
     pub_msg_goal.pose.orientation.z = current_goal[5];
@@ -279,7 +279,7 @@ void Navigation :: quaternion2euler(float *roll, float *pitch, float *yaw, float
 }
 
 float Navigation :: distanceP2P(float *p1, float *p2){
-    return sqrt(powf(abs(p1[0] - p2[0]), 2) + powf(abs(p1[1] - p2[1]), 2) + powf(abs(p1[2] - p2[2]), 2));
+    return sqrt(powf(abs(p1[0] - p2[0]), 2) + powf(abs(p1[1] - p2[1]), 2) + powf(abs(p1[2] - (p2[2] + height_offset)), 2));
 }
 
 float Navigation :: headingP2P(float *p1, float *p2){
@@ -289,7 +289,7 @@ float Navigation :: headingP2P(float *p1, float *p2){
     return abs(p1_y - p2_y);
 }
 
-void Navigation :: margincheck(){
+void Navigation :: margincheck(){ // need to consider height offset
     int checkbit = 0;
     
     for(int i = 0; i < 7; i++){ if(last_goal[i] != current_goal[i]){ checkbit++; } }
