@@ -114,7 +114,7 @@ void Waypoint :: goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg){
         drone_navigation::droneWaypoint p;
         p.pose.position.x = msg->pose.position.x;
         p.pose.position.y = msg->pose.position.y;
-        p.pose.position.z = cruise_height;
+        p.pose.position.z = msg->pose.position.z + cruise_height;
         p.pose.orientation.x = msg->pose.orientation.x;
         p.pose.orientation.y = msg->pose.orientation.y;
         p.pose.orientation.z = msg->pose.orientation.z;
