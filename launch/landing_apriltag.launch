@@ -13,7 +13,7 @@
     <arg name="script_enable" default="false"/>  
 
     <!-- cruise height will affect drone's height when script_enable is false -->
-    <arg name="cruise_height" default="5.0"/> 
+    <arg name="cruise_height" default="0.0"/> 
     
     <!-- distance_margin & heading_margin effect how precise the drone's position is -->
     <arg name="distance_margin" default="0.5"/>  
@@ -23,7 +23,7 @@
     <arg name="script_file" default="script_forward.yaml"/>
 
     <node pkg="drone_navigation" type="waypoint_cruise" name="$(arg node_name)" clear_params="true" output="screen">
-        <remap from="move_base_simple/goal" to="tag_pose"/>
+        <remap from="move_base_simple/goal" to="height_estimator/landing_pose"/>
         <param name="mode" value="$(arg mode_name)"/>
         <param name="origin" value="$(arg origin)"/>
         <param name="script_enable" value="$(arg script_enable)"/>
