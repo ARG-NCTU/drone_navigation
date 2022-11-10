@@ -6,7 +6,7 @@
     <arg name="mode_name" default="waypoint_pose"/>
 
     <!-- origin: drone (position relative to current drone state) / map (position relative to origin tf) -->
-    <arg name="origin" default="drone"/>
+    <arg name="origin" default="map"/>
 
     <!-- if script_enable is true, follow waypoints in script file -->
     <!-- if script_enable is false, follow drone/move_base_simple/goal in rviz -->
