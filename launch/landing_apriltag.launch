@@ -1,6 +1,6 @@
 <launch>
     <!-- node_name equal to name in behavior tree -->
-    <arg name="node_name" default="waypoint_tag"/>
+    <arg name="node_name" default="landing_tag"/>
 
     <!-- mode: waypoint_shifting / waypoint_rotate / waypoint_heading / waypoint_pose -->
     <arg name="mode_name" default="waypoint_pose"/>
