@@ -1,12 +1,12 @@
 <launch>
     <!-- node_name equal to name in behavior tree -->
-    <arg name="node_name" default="waypoint_search"/>
+    <arg name="node_name" default="explore_pattern_block"/>
 
     <!-- mode: waypoint_shifting / waypoint_rotate / waypoint_heading / waypoint_pose -->
     <arg name="mode_name" default="waypoint_pose"/>
 
     <!-- origin: drone (position relative to current drone state) / map (position relative to origin tf) -->
-    <arg name="origin" default="map"/>
+    <arg name="origin" default="drone"/>
 
     <!-- if script_enable is true, follow waypoints in script file -->
     <!-- if script_enable is false, follow drone/move_base_simple/goal in rviz -->
