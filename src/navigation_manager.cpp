@@ -6,6 +6,7 @@
 #include <std_msgs/Bool.h>
 #include <std_msgs/Float32.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Twist.h>
 #include <behavior_tree/behavior_tree.h>
 #include <drone_navigation/droneWaypoint.h>
 
@@ -21,10 +22,11 @@ class Navigation{
         ros::Subscriber sub_subgoal;
         ros::Subscriber sub_pose;
         ros::Subscriber sub_height_offset;
-        
+        ros::Subscriber sub_twist;
 
         float drone_origin_pose[7] = {0, 0, 0, 0, 0, 0, 0};
         float current_pose[7] = {0, 0, 0, 0, 0, 0, 0};
+        float current_twist[6] = {0, 0, 0, 0, 0, 0};
         float last_goal[7] = {-1, -1, -1, -1, -1, -1, -1};
         float current_goal[7] = {0, 0, 0, 0, 0, 0, 0};
         float distance_margin = 0.8;
@@ -40,6 +42,8 @@ class Navigation{
         bool drone_as_origin = false;
         bool condition_status = true;
 
+        bool one_time = false;
+
     public:
         bt::Condition condition;
         Navigation();
@@ -47,14 +51,15 @@ class Navigation{
         void positionCallback(const geometry_msgs::PoseStamped::ConstPtr& msg);
         void heightCallback(const std_msgs::Float32::ConstPtr& msg);
         void subgoalCallback(const drone_navigation::droneWaypoint::ConstPtr& msg);
-        
+        void twistCallback(const geometry_msgs::Twist::ConstPtr& msg);
         
         void euler2quaternion(float yaw, float *x, float *y, float *z, float *w);
         void quaternion2euler(float *roll, float *pitch, float *yaw, float x, float y, float z, float w);
         float distanceP2P(float *p1, float *p2);
         float headingP2P(float *p1, float *p2);
-
-        void margincheck();
+        
+        bool twistCheck();
+        void marginCheck();
         void navigation();
         void cmdRotate();
         void cmdShift();
@@ -69,6 +74,8 @@ Navigation :: Navigation() : condition("navigation_running"){
     sub_subgoal = n.subscribe<drone_navigation::droneWaypoint>("waypoint_planner/drone_waypoint", 1,  &Navigation::subgoalCallback, this);
     sub_pose = n.subscribe<geometry_msgs::PoseStamped>("mavros/local_position/pose", 1,  &Navigation::positionCallback, this);
     sub_height_offset = n.subscribe<std_msgs::Float32>("height_offset", 1,  &Navigation::heightCallback, this);
+    sub_height_offset = n.subscribe<std_msgs::Float32>("height_offset", 1,  &Navigation::heightCallback, this);
+    sub_twist = n.subscribe<geometry_msgs::Twist>("mavros/setpoint_velocity/cmd_vel_unstamped", 1,  &Navigation::twistCallback, this);
 }
 
 
@@ -96,7 +103,26 @@ void Navigation :: heightCallback(const std_msgs::Float32::ConstPtr& msg){
     return;
 }
 
+void Navigation :: twistCallback(const geometry_msgs::Twist::ConstPtr& msg){
+    current_twist[0] = msg->linear.x;
+    current_twist[1] = msg->linear.y;
+    current_twist[2] = msg->linear.z;
+    current_twist[3] = msg->angular.x;
+    current_twist[4] = msg->angular.y;
+    current_twist[5] = msg->angular.z;
+
+    // cout << "debug:" << endl;
+    // for(int i = 0; i < 6; i++){ 
+    //     cout << current_twist[i] << endl;
+    // }
+
+    return;
+}
+
 void Navigation :: subgoalCallback(const drone_navigation::droneWaypoint::ConstPtr& msg){
+    // NEW
+    one_time = true;
+
     pose_enable = msg->pose_enable;
     rotate_enable = msg->rotate_enable;
     heading_enable = msg->heading_enable;
@@ -182,7 +208,7 @@ void Navigation :: subgoalCallback(const drone_navigation::droneWaypoint::ConstP
             current_goal[5] = new_z;
             current_goal[6] = new_w;
         }
-    }else if(msg->origin == (string)"map"){
+    }else if(msg->origin == (string)"local_origin"){
         if(drone_as_origin){
             drone_as_origin = false;
         }
@@ -204,7 +230,7 @@ void Navigation :: subgoalCallback(const drone_navigation::droneWaypoint::ConstP
 
 void Navigation :: cmdRotate(){
     geometry_msgs::PoseStamped pub_msg_goal;
-    pub_msg_goal.header.frame_id = "map";
+    pub_msg_goal.header.frame_id = "local_origin";
     pub_msg_goal.pose.position.x = current_pose[0];
     pub_msg_goal.pose.position.y = current_pose[1];
     pub_msg_goal.pose.position.z = current_pose[2];
@@ -230,7 +256,7 @@ void Navigation :: cmdShift(){
     q_new = q_new.normalize();
     
     geometry_msgs::PoseStamped pub_msg_goal;
-    pub_msg_goal.header.frame_id = "map";
+    pub_msg_goal.header.frame_id = "local_origin";
     pub_msg_goal.pose.position.x = current_goal[0];
     pub_msg_goal.pose.position.y = current_goal[1];
     pub_msg_goal.pose.position.z = current_goal[2] + height_offset;
@@ -244,7 +270,7 @@ void Navigation :: cmdShift(){
 
 void Navigation :: cmdPose(){
     geometry_msgs::PoseStamped pub_msg_goal;
-    pub_msg_goal.header.frame_id = "map";
+    pub_msg_goal.header.frame_id = "local_origin";
     pub_msg_goal.pose.position.x = current_goal[0];
     pub_msg_goal.pose.position.y = current_goal[1];
     pub_msg_goal.pose.position.z = current_goal[2] + height_offset;
@@ -289,7 +315,21 @@ float Navigation :: headingP2P(float *p1, float *p2){
     return abs(p1_y - p2_y);
 }
 
-void Navigation :: margincheck(){ // need to consider height offset
+bool Navigation :: twistCheck(){
+    // cout << "debug:" << endl;
+    // for(int i = 0; i < 6; i++){ 
+    //     cout << current_twist[i] << endl;
+    // }
+    int checkbit = 0;
+    for(int i = 0; i < 6; i++){ if(current_twist[i] != 0){ checkbit++; } }
+    if(checkbit > 0){
+        return true;
+    }else{
+        return false;
+    }
+}
+
+void Navigation :: marginCheck(){ // need to consider height offset
     int checkbit = 0;
     
     for(int i = 0; i < 7; i++){ if(last_goal[i] != current_goal[i]){ checkbit++; } }
@@ -298,6 +338,10 @@ void Navigation :: margincheck(){ // need to consider height offset
         return;
     }else if(pose_enable && rotate_enable){
         if(checkbit > 0){ condition_status = true; }
+        // cout << "DIST current: " << distanceP2P(current_pose, current_goal) << endl;
+        // cout << "DIST margin : " << distance_margin << endl;
+        // cout << "HEAD current: " << headingP2P(current_pose, current_goal) << endl;
+        // cout << "HEAD margin : " << heading_margin << endl;
         if(distanceP2P(current_pose, current_goal) < distance_margin 
             && headingP2P(current_pose, current_goal) < heading_margin
             && checkbit > 0){
@@ -342,17 +386,26 @@ void Navigation :: conditionSet(bool state){
 
 void Navigation :: navigation(){
     ros::Rate rate(30);
-    margincheck();
 
+    marginCheck();
 
-    if(pose_enable && rotate_enable){
-        cmdPose();
-    }else if(pose_enable){
-        cmdShift();
+    if(!twistCheck()){
+        ROS_INFO("Controller is sleeping...Enable Position Navigation");
+        if(pose_enable && rotate_enable){
+            cmdPose();
+        }else if(pose_enable){
+            cmdShift();
+        }else{
+            cmdRotate();
+        }
     }else{
-        cmdRotate();
+        ROS_INFO("Controller is ativated...Disable Position Navigation");
     }
+
     conditionSet(condition_status);
+    // NEW
+    one_time = false;
+
     rate.sleep();
     return;
 }
