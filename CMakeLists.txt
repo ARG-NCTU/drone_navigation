@@ -138,8 +138,10 @@ add_executable(visualize_path src/visualize_path.cpp)
 target_link_libraries(waypoint_nav ${catkin_LIBRARIES})
 # target_link_libraries(waypoint_tsp ${catkin_LIBRARIES})
 target_link_libraries(waypoint_cruise ${catkin_LIBRARIES})
+add_dependencies(waypoint_cruise ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(waypoint_landing ${catkin_LIBRARIES})
 target_link_libraries(navigation_manager ${catkin_LIBRARIES})
+add_dependencies(navigation_manager ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(visualize_path ${catkin_LIBRARIES})
 
 ## Declare a C++ library
