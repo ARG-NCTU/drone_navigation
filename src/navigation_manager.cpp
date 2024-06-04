@@ -51,6 +51,8 @@ class Navigation{
         //check flag for all subgoal are finished keep last goal
         bool all_subgoal_finished = false;
 
+        ros::Time last_twist_time;
+        double twist_timeout = 5.0;
 
     public:
         bt::Condition condition;
@@ -85,6 +87,7 @@ Navigation :: Navigation() : condition("navigation_running"){
     sub_height_offset = n.subscribe<std_msgs::Float32>("height_offset", 1,  &Navigation::heightCallback, this);
     //sub_height_offset = n.subscribe<std_msgs::Float32>("height_offset", 1,  &Navigation::heightCallback, this);
     sub_twist = n.subscribe<geometry_msgs::Twist>("mavros/setpoint_velocity/cmd_vel_unstamped", 1,  &Navigation::twistCallback, this);
+    last_twist_time = ros::Time::now();
 }
 
 
@@ -119,7 +122,7 @@ void Navigation :: twistCallback(const geometry_msgs::Twist::ConstPtr& msg){
     current_twist[3] = msg->angular.x;
     current_twist[4] = msg->angular.y;
     current_twist[5] = msg->angular.z;
-
+    last_twist_time = ros::Time::now();
     // cout << "debug:" << endl;
     // for(int i = 0; i < 6; i++){ 
     //     cout << current_twist[i] << endl;
@@ -357,6 +360,9 @@ bool Navigation :: twistCheck(){
     // for(int i = 0; i < 6; i++){ 
     //     cout << current_twist[i] << endl;
     // }
+    ros::Duration elapsed_time = ros::Time::now() - last_twist_time;
+    return elapsed_time.toSec() < twist_timeout;
+
     int checkbit = 0;
     for(int i = 0; i < 6; i++){ if(current_twist[i] != 0){ checkbit++; } }
     if(checkbit > 0){
