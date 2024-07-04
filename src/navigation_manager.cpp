@@ -19,6 +19,7 @@ class Navigation{
         ros::NodeHandle n;
         ros::Publisher pub_goalpoint;
         ros::Publisher pub_is_finish;
+        ros::Publisher pub_subgoal_visual;
         ros::Subscriber sub_subgoal;
         ros::Subscriber sub_pose;
         ros::Subscriber sub_height_offset;
@@ -29,7 +30,8 @@ class Navigation{
         float current_twist[6] = {0, 0, 0, 0, 0, 0};
         float last_goal[7] = {-1, -1, -1, -1, -1, -1, -1};
         float current_goal[7] = {0, 0, 0, 0, 0, 0, 0};
-        float distance_margin = 0.8;
+        float visual_goal[7] = {0, 0, 0, 0, 0, 0, 0};
+        float distance_margin = 0.05;
         float heading_margin = 0.017;
         float height_offset = 0;
         unsigned int planner_seq = 0;
@@ -53,7 +55,6 @@ class Navigation{
 
         ros::Time last_twist_time;
         double twist_timeout = 5.0;
-
     public:
         bt::Condition condition;
         Navigation();
@@ -82,6 +83,7 @@ class Navigation{
 Navigation :: Navigation() : condition("navigation_running"){
     pub_goalpoint = n.advertise<geometry_msgs::PoseStamped>("mavros/setpoint_position/local", 10);
     pub_is_finish = n.advertise<std_msgs::Bool>("navigation_manager/is_finish", 10);
+    pub_subgoal_visual = n.advertise<geometry_msgs::PoseStamped>("drone_waypoint/visual/local", 10);
     sub_subgoal = n.subscribe<drone_navigation::droneWaypoint>("waypoint_planner/drone_waypoint", 1,  &Navigation::subgoalCallback, this);
     sub_pose = n.subscribe<geometry_msgs::PoseStamped>("mavros/local_position/pose", 1,  &Navigation::positionCallback, this);
     sub_height_offset = n.subscribe<std_msgs::Float32>("height_offset", 1,  &Navigation::heightCallback, this);
@@ -141,6 +143,7 @@ void Navigation :: subgoalCallback(const drone_navigation::droneWaypoint::ConstP
     last_waypoint = msg->last_waypoint;
     distance_margin = msg->distance_margin;
     heading_margin = msg->heading_margin;
+
     if((msg->origin == (string)"drone" && rotate_enable) || (heading_enable && rotate_enable)){
         // if(!drone_as_origin){
         //     drone_as_origin = true;
@@ -151,16 +154,18 @@ void Navigation :: subgoalCallback(const drone_navigation::droneWaypoint::ConstP
             planner_seq = msg->planner_seq;
             for(int i = 0; i < 7; i++){ drone_origin_pose[i] = current_pose[i]; }
         }
+        //calculate rotation
         if(heading_enable){
+            ROS_INFO("Heading_enable");
             float origin_r, origin_p, origin_y, rotate_y, new_x, new_y, new_z, new_w;
             quaternion2euler(&origin_r, &origin_p, &origin_y, 
                             drone_origin_pose[3], 
                             drone_origin_pose[4], 
                             drone_origin_pose[5], 
                             drone_origin_pose[6]);
-            float v1[2], v2[2];
-            v1[0] = 1; 
-            v1[1] = 0;
+
+            //calculate heading to target point
+            float v2[2];
             v2[0] = current_goal[0] - current_pose[0];
             v2[1] = current_goal[1] - current_pose[1];
             rotate_y = acos(v2[0] / sqrt(powf(v2[0], 2) + powf(v2[1], 2)));
@@ -170,30 +175,11 @@ void Navigation :: subgoalCallback(const drone_navigation::droneWaypoint::ConstP
                             &new_y, 
                             &new_z, 
                             &new_w);
-            current_goal[0] = drone_origin_pose[0] + msg->pose.position.x;
-            current_goal[1] = drone_origin_pose[1] + msg->pose.position.y;
-            current_goal[2] = drone_origin_pose[2] + msg->pose.position.z;
             current_goal[3] = new_x;
             current_goal[4] = new_y;
             current_goal[5] = new_z;
             current_goal[6] = new_w;
-        }else{
-            float origin_r, origin_p, origin_y, cmd_r, cmd_p, cmd_y, new_x, new_y, new_z, new_w;
-            quaternion2euler(&origin_r, &origin_p, &origin_y, 
-                            drone_origin_pose[3], 
-                            drone_origin_pose[4], 
-                            drone_origin_pose[5], 
-                            drone_origin_pose[6]);
-            quaternion2euler(&cmd_r, &cmd_p, &cmd_y, 
-                            msg->pose.orientation.x, 
-                            msg->pose.orientation.y, 
-                            msg->pose.orientation.z, 
-                            msg->pose.orientation.w);
-            euler2quaternion(origin_y + cmd_y, 
-                            &new_x, 
-                            &new_y, 
-                            &new_z, 
-                            &new_w);
+
             if(msg->pose.position.x == 0){
                 if(msg->pose.position.y >= 0){
                     current_goal[0] = drone_origin_pose[0] + 
@@ -215,10 +201,50 @@ void Navigation :: subgoalCallback(const drone_navigation::droneWaypoint::ConstP
                                 sin(origin_y + atan(msg->pose.position.y / msg->pose.position.x));
             }
             current_goal[2] = drone_origin_pose[2] + msg->pose.position.z;
+            
+        }else{
+            float origin_r, origin_p, origin_y, cmd_r, cmd_p, cmd_y, new_x, new_y, new_z, new_w;
+            quaternion2euler(&origin_r, &origin_p, &origin_y, 
+                            drone_origin_pose[3], 
+                            drone_origin_pose[4], 
+                            drone_origin_pose[5], 
+                            drone_origin_pose[6]);
+            quaternion2euler(&cmd_r, &cmd_p, &cmd_y, 
+                            msg->pose.orientation.x, 
+                            msg->pose.orientation.y, 
+                            msg->pose.orientation.z, 
+                            msg->pose.orientation.w);
+            euler2quaternion(origin_y + cmd_y, 
+                            &new_x, 
+                            &new_y, 
+                            &new_z, 
+                            &new_w);
             current_goal[3] = new_x;
             current_goal[4] = new_y;
             current_goal[5] = new_z;
             current_goal[6] = new_w;
+
+            if(msg->pose.position.x == 0){
+                if(msg->pose.position.y >= 0){
+                    current_goal[0] = drone_origin_pose[0] + 
+                                sqrt(powf(msg->pose.position.y, 2)) * cos(origin_y + PI / 2);
+                    current_goal[1] = drone_origin_pose[1] + 
+                                sqrt(powf(msg->pose.position.y, 2)) * sin(origin_y + PI / 2);
+                }else{
+                    current_goal[0] = drone_origin_pose[0] + 
+                                sqrt(powf(msg->pose.position.y, 2)) * cos(origin_y - PI / 2);
+                    current_goal[1] = drone_origin_pose[1] + 
+                                sqrt(powf(msg->pose.position.y, 2)) * sin(origin_y - PI / 2);
+                }
+            }else{
+                current_goal[0] = drone_origin_pose[0] + 
+                                sqrt(powf(msg->pose.position.x, 2) + powf(msg->pose.position.y, 2)) * 
+                                cos(origin_y + atan(msg->pose.position.y / msg->pose.position.x));
+                current_goal[1] = drone_origin_pose[1] + 
+                                sqrt(powf(msg->pose.position.x, 2) + powf(msg->pose.position.y, 2)) * 
+                                sin(origin_y + atan(msg->pose.position.y / msg->pose.position.x));
+            }
+            current_goal[2] = drone_origin_pose[2] + msg->pose.position.z;
         }
     }else if(msg->origin == (string)"local_origin"){
         if(drone_as_origin){
@@ -235,9 +261,53 @@ void Navigation :: subgoalCallback(const drone_navigation::droneWaypoint::ConstP
         planner_seq = msg->planner_seq;
     }
     
-    // if(last_waypoint){
-    //     drone_as_origin = false;
-    // }
+    //Calculate the visual pose of the subgoal
+    if((msg->origin == (string)"drone" && rotate_enable) || (heading_enable && rotate_enable)){
+        float origin_r, origin_p, origin_y, cmd_r, cmd_p, cmd_y, new_x, new_y, new_z, new_w;
+        quaternion2euler(&origin_r, &origin_p, &origin_y, 
+                        drone_origin_pose[3], 
+                        drone_origin_pose[4], 
+                        drone_origin_pose[5], 
+                        drone_origin_pose[6]);
+        quaternion2euler(&cmd_r, &cmd_p, &cmd_y, 
+                        msg->pose.orientation.x, 
+                        msg->pose.orientation.y, 
+                        msg->pose.orientation.z, 
+                        msg->pose.orientation.w);
+        euler2quaternion(origin_y + cmd_y, 
+                        &new_x, 
+                        &new_y, 
+                        &new_z, 
+                        &new_w);
+        if(msg->pose.position.x == 0){
+            if(msg->pose.position.y >= 0){
+                visual_goal[0] = drone_origin_pose[0] + 
+                            sqrt(powf(msg->pose.position.y, 2)) * cos(origin_y + PI / 2);
+                visual_goal[1] = drone_origin_pose[1] + 
+                            sqrt(powf(msg->pose.position.y, 2)) * sin(origin_y + PI / 2);
+            }else{
+                visual_goal[0] = drone_origin_pose[0] + 
+                            sqrt(powf(msg->pose.position.y, 2)) * cos(origin_y - PI / 2);
+                visual_goal[1] = drone_origin_pose[1] + 
+                            sqrt(powf(msg->pose.position.y, 2)) * sin(origin_y - PI / 2);
+            }
+        }else{
+            visual_goal[0] = drone_origin_pose[0] + 
+                            sqrt(powf(msg->pose.position.x, 2) + powf(msg->pose.position.y, 2)) * 
+                            cos(origin_y + atan(msg->pose.position.y / msg->pose.position.x));
+            visual_goal[1] = drone_origin_pose[1] + 
+                            sqrt(powf(msg->pose.position.x, 2) + powf(msg->pose.position.y, 2)) * 
+                            sin(origin_y + atan(msg->pose.position.y / msg->pose.position.x));
+        }
+        visual_goal[2] = drone_origin_pose[2] + msg->pose.position.z;
+        visual_goal[3] = new_x;
+        visual_goal[4] = new_y;
+        visual_goal[5] = new_z;
+        visual_goal[6] = new_w;
+    }else{
+        cout << "Use local_origin" << endl;
+    }
+
     return;
 }
 
@@ -361,7 +431,11 @@ bool Navigation :: twistCheck(){
     //     cout << current_twist[i] << endl;
     // }
     ros::Duration elapsed_time = ros::Time::now() - last_twist_time;
-    return elapsed_time.toSec() < twist_timeout;
+    if (elapsed_time.toSec() > twist_timeout){
+        ROS_INFO("No Twist detected");
+        return false;
+    }
+    
 
     int checkbit = 0;
     for(int i = 0; i < 6; i++){ if(current_twist[i] != 0){ checkbit++; } }
@@ -387,7 +461,8 @@ void Navigation :: marginCheck(){ // need to consider height offset
         ROS_INFO("ALL SUBGOAL FINISHED");
         pose_enable = false;
         rotate_enable = false;
-        return;}
+        return;
+    }
 
     all_subgoal_finished = false;
 
@@ -398,22 +473,49 @@ void Navigation :: marginCheck(){ // need to consider height offset
     cout << "HEAD current: " << headingP2P(current_pose, current_goal) << endl;
     cout << "HEAD margin : " << heading_margin << endl;
 
+    
+
+    //check if no movement is enabled
+    if((!pose_enable && !rotate_enable)){
+        return;
+    }
     bool withinDistanceMargin = distanceP2P(current_pose, current_goal) < distance_margin;
     bool withinHeadingMargin = headingP2P(current_pose, current_goal) < heading_margin;
+    bool withinDistanceMargin_large = distanceP2P(current_pose, current_goal) < 1.5*distance_margin;
+    bool withinHeadingMargin_large = headingP2P(current_pose, current_goal) < 2*heading_margin;
 
-    if ((!pose_enable && !rotate_enable) || (!withinDistanceMargin && !withinHeadingMargin)) {
-        return;  // No need to proceed if no movement is enabled or margins aren't met
+    if(heading_enable){//if heading_enable drone will fly towards to the target point (only check pose no heading) 
+        if(pose_enable && !withinDistanceMargin){ //check if pose_enable is enabled and distance is not within margin
+        return;
+        }
+    }
+    else if(rotate_enable && pose_enable){ //if control the pose of drone make the margin larger. 
+        if(pose_enable && !withinDistanceMargin_large){ //check if pose_enable is enabled and distance is not within margin
+            return;
+        }
+        if(rotate_enable && !withinHeadingMargin_large){ //check if rotate_enable is enabled and heading is not within margin
+            return;
+        }
+    }
+    else{//only rotate_enable or pose_enable use original margin
+        if(pose_enable && !withinDistanceMargin){ //check if pose_enable is enabled and distance is not within margin
+            return;
+        }
+        if(rotate_enable && !withinHeadingMargin){ //check if rotate_enable is enabled and heading is not within margin
+            return;
+        }
     }
 
-    for (int i = 0; i < 7; i++) {
-        last_goal[i] = current_goal[i];
-    }
 
     // Publish that the current goal is achieved
     std_msgs::Bool pub_msg_state;
     pub_msg_state.data = true;
     pub_is_finish.publish(pub_msg_state);
     ROS_INFO("tick:   %s", planner_name.c_str());
+
+    for (int i = 0; i < 7; i++) {
+        last_goal[i] = current_goal[i];
+    }
 
     // Check if this is the last waypoint and update condition status
     if (last_waypoint) {
@@ -423,55 +525,11 @@ void Navigation :: marginCheck(){ // need to consider height offset
         //store the last goal to keep pose
         for(int i = 0; i < 7; i++){keep_pose[i] = current_goal[i];}
         all_subgoal_finished = true;
-        
+        return;
     }
-
-
-
-    // if(!pose_enable && !rotate_enable){
-    //     return;
-    // }else if(pose_enable && rotate_enable){
-    //     if(checkbit > 0){ condition_status = true; }
-    //         cout << "DIST current: " << distanceP2P(current_pose, current_goal) << endl;
-    //         cout << "DIST margin : " << distance_margin << endl;
-    //         cout << "HEAD current: " << headingP2P(current_pose, current_goal) << endl;
-    //         cout << "HEAD margin : " << heading_margin << endl;
-    //     if(distanceP2P(current_pose, current_goal) < distance_margin 
-    //         && headingP2P(current_pose, current_goal) < heading_margin
-    //         && checkbit > 0){
-    //         for(int i = 0; i < 7; i++){ last_goal[i] = current_goal[i]; }
-    //         std_msgs::Bool pub_msg_state;
-    //         pub_msg_state.data = true;
-    //         pub_is_finish.publish(pub_msg_state);
-    //         ROS_INFO("tick:   %s", planner_name.c_str());
-    //         if(last_waypoint)
-    //         { ROS_INFO("finish: %s", planner_name.c_str()); condition_status = false;}
-    //     }
-    // }else if(pose_enable){
-    //     if(checkbit > 0){ condition_status = true; }
-    //     if(distanceP2P(current_pose, current_goal) < distance_margin
-    //         && checkbit > 0){
-    //         for(int i = 0; i < 7; i++){ last_goal[i] = current_goal[i]; }
-    //         std_msgs::Bool pub_msg_state;
-    //         pub_msg_state.data = true;
-    //         pub_is_finish.publish(pub_msg_state);
-    //         ROS_INFO("tick:   %s", planner_name.c_str());
-    //         if(last_waypoint)
-    //         { ROS_INFO("finish: %s", planner_name.c_str()); condition_status = false;}
-    //     }
-    // }else if(rotate_enable){
-    //     if(checkbit > 0){ condition_status = true; }
-    //     if(headingP2P(current_pose, current_goal) < heading_margin
-    //         && checkbit > 0){
-    //         for(int i = 0; i < 7; i++){ last_goal[i] = current_goal[i]; }
-    //         std_msgs::Bool pub_msg_state;
-    //         pub_msg_state.data = true;
-    //         pub_is_finish.publish(pub_msg_state);
-    //         ROS_INFO("tick:   %s", planner_name.c_str());
-    //         if(last_waypoint)
-    //         { ROS_INFO("finish: %s", planner_name.c_str()); condition_status = false;}
-    //     }
-    // }
+    else{
+        return;
+    }
     return;
 }
 
@@ -484,33 +542,60 @@ void Navigation :: conditionSet(bool state){
 void Navigation::navigation() {
     ros::Rate rate(30);
     marginCheck();
-
     if (!twistCheck()) { // No human control
         ROS_INFO("Controller is not activated...Enable Position Navigation");
         ROS_INFO("pose_enable: %d", pose_enable);
         ROS_INFO("rotate_enable: %d", rotate_enable);
         ROS_INFO("last_waypoint: %d", last_waypoint);
         ROS_INFO("Current Pose: [%f, %f, %f, %f, %f, %f, %f]", current_pose[0], current_pose[1], current_pose[2], current_pose[3], current_pose[4], current_pose[5], current_pose[6]);
+        ROS_INFO("Last Goal: [%f, %f, %f, %f, %f, %f, %f]", last_goal[0], last_goal[1], last_goal[2], last_goal[3], last_goal[4], last_goal[5], last_goal[6]);
         ROS_INFO("Current Goal: [%f, %f, %f, %f, %f, %f, %f]", current_goal[0], current_goal[1], current_goal[2], current_goal[3], current_goal[4], current_goal[5], current_goal[6]);
         ROS_INFO("keep_pose: [%f, %f, %f, %f, %f, %f, %f]", keep_pose[0], keep_pose[1], keep_pose[2], keep_pose[3], keep_pose[4], keep_pose[5], keep_pose[6]);
+    
+
+
         if (pose_enable || rotate_enable) {
             // 2-1: Waypoint from subgoalCallback and margin not satisfied
-            ROS_INFO("Moving to subgoal waypoint");
+            geometry_msgs::PoseStamped pub_msg_goal_visual;
+            pub_msg_goal_visual.header.frame_id = "local_origin";
+            pub_msg_goal_visual.pose.position.x = visual_goal[0];
+            pub_msg_goal_visual.pose.position.y = visual_goal[1];
+            pub_msg_goal_visual.pose.position.z = visual_goal[2];
+            pub_msg_goal_visual.pose.orientation.x = visual_goal[3];
+            pub_msg_goal_visual.pose.orientation.y = visual_goal[4];
+            pub_msg_goal_visual.pose.orientation.z = visual_goal[5];
+            pub_msg_goal_visual.pose.orientation.w = visual_goal[6];
             if (pose_enable && rotate_enable) {
+                ROS_INFO("Posing to subgoal waypoint");
                 cmdPose();
+                pub_subgoal_visual.publish(pub_msg_goal_visual);
             } else if (pose_enable) {
+                ROS_INFO("Shifting to subgoal waypoint");
                 cmdShift();
+                pub_subgoal_visual.publish(pub_msg_goal_visual);
             } else if (rotate_enable) {
+                ROS_INFO("Rotating to subgoal waypoint");
                 cmdRotate();
+                pub_subgoal_visual.publish(pub_msg_goal_visual);
             }
         } else {
             // 2-2: Maintain or resume last known stable position using keep_pose (maybe the last goal point or the human control last point)  
             ROS_INFO("No active waypoint commands; maintaining position using keep_pose");
             cmdKeep();
+             geometry_msgs::PoseStamped pub_msg_goal_visual;
+            pub_msg_goal_visual.header.frame_id = "local_origin";
+            pub_msg_goal_visual.pose.position.x = 0.0f;
+            pub_msg_goal_visual.pose.position.y = 0.0f;
+            pub_msg_goal_visual.pose.position.z = 0.0f;
+            pub_msg_goal_visual.pose.orientation.x = 0.0f;
+            pub_msg_goal_visual.pose.orientation.y = 0.0f;
+            pub_msg_goal_visual.pose.orientation.z = 0.0f;
+            pub_msg_goal_visual.pose.orientation.w = 1.0f;
+            pub_subgoal_visual.publish(pub_msg_goal_visual);
         }
     } else {
         // 1: Human control detected
-        ROS_INFO("Controller is activated...Disable Position Navigation");
+            ROS_INFO("Controller is activated...Disable Position Navigation");
     }
     conditionSet(condition_status);
     rate.sleep();
