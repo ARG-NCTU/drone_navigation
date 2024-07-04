@@ -44,7 +44,7 @@ class Waypoint{
         list<drone_navigation::droneWaypoint> backup_list;
         bool navigation_manager_status = false;
         bool waypoint_running = false;
-        int waypoint_planner_action = -1;
+        // int waypoint_planner_action = -1;
         int waypoint_num = 0;
         int waypoint_dim = 0;
         int current_waypoint = 1;
@@ -55,12 +55,13 @@ class Waypoint{
         string origin = "map";
         string planner_name = "none";
         unsigned int planner_seq = 0;
-        bool script_enable = false;
+        // bool script_enable = false;
         float distance_margin = 0.08; 
         float heading_margin = 0.01; 
         float cruise_height = 9.0;
+        float cruise_x_offset = -0.5;
         // default
-        
+        vector<float> previous_waypoint = {0, 0, 0, 0};
 
     public:
         bt::Action action;
@@ -78,6 +79,7 @@ class Waypoint{
         void transRotate(float *waypoint);
         void transHeading(float *waypoint);
         void transPose(float *waypoint);
+        void transToward(float *waypoint);
 
         void stateCallback(const std_msgs::Bool::ConstPtr& msg);
         void goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg);
@@ -89,6 +91,9 @@ class Waypoint{
         void conditionRunningSet(bool state);
         void setLastCondition();
         void prolongEvalState(bool state);
+        bool script_enable = false;
+        int waypoint_planner_action = -1;
+        bool goal_callback_received = false; //add a flag if the script_enable is false use goalcallback wait for goal
 };
 
 Waypoint :: Waypoint() : action(ros::this_node::getName()), 
@@ -108,11 +113,12 @@ void Waypoint :: stateCallback(const std_msgs::Bool::ConstPtr& msg){
 
 void Waypoint :: goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg){
     if(!script_enable){
+        goal_callback_received = true;  // Set the flag to true when the goal callback is triggered
         // init();
         // cout << "recieved goal" << endl;
         subgoal_list.clear();
         drone_navigation::droneWaypoint p;
-        p.pose.position.x = msg->pose.position.x;
+        p.pose.position.x = msg->pose.position.x + cruise_x_offset;
         p.pose.position.y = msg->pose.position.y;
         p.pose.position.z = msg->pose.position.z + cruise_height;
         p.pose.orientation.x = msg->pose.orientation.x;
@@ -129,24 +135,18 @@ void Waypoint :: goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg){
             p.pose_enable = true;
             p.rotate_enable = false;
             p.heading_enable = false;
-            // p.last_waypoint = false;
-            // subgoal_list.push_back(p);
             p.last_waypoint = true;
             subgoal_list.push_back(p);
         }else if(mode == (string)"waypoint_rotate"){
             p.pose_enable = false;
             p.rotate_enable = true;
             p.heading_enable = false;
-            // p.last_waypoint = false;
-            // subgoal_list.push_back(p);
             p.last_waypoint = true;
             subgoal_list.push_back(p);
         }else if(mode == (string)"waypoint_heading"){
             p.pose_enable = false;
             p.rotate_enable = true;
             p.heading_enable = true;
-            p.last_waypoint = false;
-            // subgoal_list.push_back(p);
             subgoal_list.push_back(p);
             p.pose_enable = true;
             p.rotate_enable = false;
@@ -157,8 +157,13 @@ void Waypoint :: goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg){
             p.pose_enable = true;
             p.rotate_enable = true;
             p.heading_enable = false;
-            // p.last_waypoint = false;
-            // subgoal_list.push_back(p);
+            p.last_waypoint = true;
+            subgoal_list.push_back(p);
+        }
+        else if(mode == (string)"waypoint_toward"){
+            p.pose_enable = true;
+            p.rotate_enable = true;
+            p.heading_enable = true; //change for heading to next goal point
             p.last_waypoint = true;
             subgoal_list.push_back(p);
         }
@@ -173,6 +178,7 @@ void Waypoint :: structListCopy(list<drone_navigation::droneWaypoint> &origin, l
 
 void Waypoint :: init(){
     waypoint_running = true;
+     goal_callback_received = false;  // Reset the flag when action transitions to running
     return;
 }
 
@@ -344,6 +350,45 @@ void Waypoint :: transHeading(float *waypoint){
     return;
 }
 
+void Waypoint :: transToward(float *waypoint){ //same as transpose but with heading_enable = true / the new heading will calculate in navigation_manager
+    drone_navigation::droneWaypoint p;
+    
+    p.pose.position.x = waypoint[0];
+    p.pose.position.y = waypoint[1];
+    p.pose.position.z = waypoint[2];
+    if(waypoint_dim == 3){
+        p.pose.orientation.x = 0;
+        p.pose.orientation.y = 0;
+        p.pose.orientation.z = 0;
+        p.pose.orientation.w = 1;
+    }else if(waypoint_dim == 4){
+        tf::Quaternion q_new;
+        q_new.setRPY(0, 0, (waypoint[3] * PI / 180));
+        q_new = q_new.normalize();
+        p.pose.orientation.x = q_new.getX();
+        p.pose.orientation.y = q_new.getY();
+        p.pose.orientation.z = q_new.getZ();
+        p.pose.orientation.w = q_new.getW();
+    }
+    p.pose_enable = true;
+    p.rotate_enable = true;
+    p.heading_enable = true;
+    if(current_waypoint == waypoint_num){
+        p.last_waypoint = true;
+    }else{
+        p.last_waypoint = false;
+    }
+    p.distance_margin = distance_margin;
+    p.heading_margin = heading_margin;
+    p.origin = origin;
+    p.planner_seq = planner_seq;
+    p.planner_name = planner_name;
+    subgoal_list.push_back(p);
+
+    current_waypoint++;
+    return;
+}
+
 void Waypoint :: transPose(float *waypoint){
     drone_navigation::droneWaypoint p;
     
@@ -391,17 +436,24 @@ void Waypoint :: scriptTranslate(float **script_waypoint){
         cout << endl;
     }
 
-    // if(mode == (string)"waypoint_shifting"){
-    //     transShift(script_waypoint[0]);
-    // }else if(mode == (string)"waypoint_rotate"){
-    //     transRotate(script_waypoint[0]);
-    // }else if(mode == (string)"waypoint_heading"){
-    //     transShift(script_waypoint[0]);
-    // }else if(mode == (string)"waypoint_pose"){
-    //     transPose(script_waypoint[0]);
-    // }
-
     for(int i = 0; i < waypoint_num; i++){
+        float x = script_waypoint[i][0];
+        float y = script_waypoint[i][1];
+        float z = script_waypoint[i][2];
+        float degree = (waypoint_dim == 4) ? script_waypoint[i][3] : 0.0;
+
+        // Determine mode based on the comparison with previous_waypoint
+        if (previous_waypoint[0] != x || previous_waypoint[1] != y || previous_waypoint[2] != z) {
+            mode = "waypoint_pose";
+        } else if (previous_waypoint[3] != degree) {
+            mode = "waypoint_rotate";
+        }
+
+        // Update previous_waypoint
+        previous_waypoint[0] = x;
+        previous_waypoint[1] = y;
+        previous_waypoint[2] = z;
+        previous_waypoint[3] = degree;
         if(mode == (string)"waypoint_shifting"){
             transShift(script_waypoint[i]);
         }else if(mode == (string)"waypoint_rotate"){
@@ -414,6 +466,8 @@ void Waypoint :: scriptTranslate(float **script_waypoint){
             transHeading(script_waypoint[i]);
         }else if(mode == (string)"waypoint_pose"){
             transPose(script_waypoint[i]);
+        }else if(mode == (string)"waypoint_toward"){
+            transToward(script_waypoint[i]);
         }
     }
     return;
@@ -448,16 +502,19 @@ void Waypoint :: getParam(){
     n.getParam("/" + node_ns + "/script_enable", script_enable);
     n.getParam("/" + node_ns + "/mode", mode);
     n.getParam("/" + node_ns + "/origin", origin);
+    if(!script_enable){
+        n.getParam("/" + node_ns + "/cruise_x_offset", cruise_x_offset);
+    }
     waypoint_num = xml_waypoint.size();
     waypoint_dim = xml_waypoint[0].size();
     planner_name = ros::this_node::getName();
     // debug
-    // cout << "test: " << endl;
-    // cout << distance_margin << endl;
-    // cout << heading_margin << endl;
-    // cout << script_enable << endl;
-    // cout << mode << endl;
-    // cout << origin << endl;
+    cout << "test: " << endl;
+    cout << distance_margin << endl;
+    cout << heading_margin << endl;
+    cout << script_enable << endl;
+    cout << mode << endl;
+    cout << origin << endl;
     // debug
 
     if(script_enable){
@@ -517,17 +574,26 @@ int main(int argc, char **argv){
 
     while(ros::ok()){
         if(cruise.action.is_active() && cruise.action.active_has_changed()){
-            // ROS_INFO("Action: Start");
+            ROS_INFO("Action: Start");
             cruise.init();
         }
         else if(cruise.action.active_has_changed() && !(cruise.action.is_active())){
-            // ROS_INFO("Action: Done");
+            ROS_INFO("Action: Done");
             cruise.recap();
-            cruise.actionSet(1);
+            if (cruise.waypoint_planner_action == 1) {
+                cruise.actionSet(1);  // Set to success if it was successful
+            } else if (cruise.waypoint_planner_action == -1) {
+                cruise.actionSet(-1);  // Set to failure if it was a failure
+            }
         }
         else if(cruise.action.is_active()){
-            cruise.actionSet(0);
-            cruise.publishGoal();
+            // Check if goalCallback hasn't been called when the action is running and *script_enable is false* -> handle the case where the goal is not received.
+            if (!cruise.goal_callback_received && !cruise.script_enable) {
+                cruise.actionSet(-1);  // Set the action to failure
+            } else {
+                cruise.actionSet(0);  // Set the action to running
+                cruise.publishGoal();  // Publish the goal if necessary
+            }
         }else{
             cruise.setLastCondition();
         }
