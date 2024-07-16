@@ -20,7 +20,7 @@
     <arg name="heading_margin" default="0.017"/> 
 
     <!-- script contains multiple waypoints -->
-    <arg name="script_file" default="script_search.yaml"/>
+    <arg name="script_file" default="pyivp_search.yaml"/>
 
     <node pkg="drone_navigation" type="waypoint_cruise" name="$(arg node_name)" clear_params="true" output="screen">
         <remap from="move_base_simple/goal" to="perception_result/goal"/>
