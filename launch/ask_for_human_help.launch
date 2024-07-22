@@ -1,0 +1,5 @@
+<launch>
+    <node name="ask_for_help_action" pkg="drone_navigation" type="drone_ask_for_help.py" output="screen">
+        <remap from='/help_warning_signal' to='/help_warning_signal'/>
+    </node>
+</launch>
