@@ -108,8 +108,8 @@ class PatternBlockGoalPointGenerator:
         # print("=============================================================")
 
     def format_waypoints(self, filename):
-        waypoints = [[int(point[0]), int(point[1]), int(point[2]), int(point[3])] for point in self.goal_with_heading if len(point) == 4]
-        if len(waypoints) != len(self.goal_with_heading):
+        waypoints = [[int(point[0]), int(point[1]), int(point[2]), int(point[3])] for point in self.goal_list if len(point) == 4]
+        if len(waypoints) != len(self.goal_list):
             print("Invalid goal point format")
             return
 
