@@ -306,6 +306,13 @@ void Navigation :: subgoalCallback(const drone_navigation::droneWaypoint::ConstP
         visual_goal[6] = new_w;
     }else{
         cout << "Use local_origin" << endl;
+        visual_goal[0] = msg->pose.position.x;
+        visual_goal[1] = msg->pose.position.y;
+        visual_goal[2] = msg->pose.position.z;
+        visual_goal[3] = msg->pose.orientation.x;
+        visual_goal[4] = msg->pose.orientation.y;
+        visual_goal[5] = msg->pose.orientation.z;
+        visual_goal[6] = msg->pose.orientation.w;
     }
 
     return;
