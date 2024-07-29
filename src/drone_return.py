@@ -9,15 +9,15 @@ from drone_navigation.msg import droneWaypoint
 import math
 import tf
 from tf.transformations import quaternion_matrix, translation_matrix, concatenate_matrices, quaternion_from_euler
-
+import time
 FAIL = 0
 RUNNING = 1
 SUCCESS = 2
 
 
 class DroneReturn:
-    # only work in with localization of gazebo mode
-    def __init__(self):
+    #support 2 mode "Drone": use gazebo pose only simulation, "local_position": use /mavros/local_position/pose topic  
+    def __init__(self, mode):
         node_name = "return"
         self.return_finish_success_pub = rospy.Publisher("/{}_finish_success".format(node_name), Bool, queue_size=1)
         self.behavior_active_sub = rospy.Subscriber(
@@ -30,6 +30,9 @@ class DroneReturn:
         )
         self.drone_takeoff_pose_sub = rospy.Subscriber(
             "/drone/armed_pose", PoseStamped, self.drone_takeoff_pose_callback
+        )
+        self.drone_mavros_armed_pose_sub = rospy.Subscriber(
+            "/drone/mavros/armed_pose", PoseStamped, self.drone_mavros_takeoff_pose_callback
         )
 
         self.waypoint_pub = rospy.Publisher(
@@ -62,28 +65,42 @@ class DroneReturn:
 
         self.distance_margin = 0.08
         self.heading_margin = 0.01
-        self.origin = "drone"
-
-    def drone_pose_to_local_callback(self, msg):
-        self.drone_pose_to_local = msg
-        self.drone_pose_to_local_received = True
+        self.origin = None
+        self.mode  = mode
+        self.mavros_armed_pose = None
+        self.start_pose = None
+        self.mavros_armed_pose_received = False
 
     def drone_takeoff_pose_callback(self, msg):
         self.takeoff_pose_to_local = msg
         self.takeoff_pose_to_local_received = True
+    
+    def drone_pose_to_local_callback(self, msg):
+        self.drone_pose_to_local = msg
+        self.drone_pose_to_local_received = True
 
     def behavior_active_callback(self, msg):
         self.active = msg
         if self.active.active and self.first_time_active: # first time active
-            self.cache_transforms()
-            self.add_return_subgoals()
-            self.first_time_active = False
+            if self.mode == "drone":
+                self.origin = "drone"
+                self.cache_transforms()
+                self.add_return_subgoals()
+                self.first_time_active = False
+            elif self.mode == "local_position":
+                self.origin = "local_position"
+                self.log_start_pose()
+                self.add_mavros_armed_pose()
+                self.first_time_active = False
+            else:
+                rospy.logerr("Mode not supported")
+                return
 
     def waypoint_isfinish_callback(self, msg):
         self.waypoint_isfinish = msg
 
     def pub_subgoal_callback(self, event):
-        if not self.drone_pose_to_local_received or not self.takeoff_pose_to_local_received:
+        if not (self.drone_pose_to_local_received and self.takeoff_pose_to_local_received) or not (self.drone_pose_to_local_received and self.mavros_armed_pose_received):
             rospy.logwarn_throttle(1, "Waiting for drone or takeoff pose to be received")
             return
         if self.drone_pose_to_local is None or self.takeoff_pose_to_local is None:
@@ -117,40 +134,39 @@ class DroneReturn:
             status.status = FAIL
             self.behavior_status_pub.publish(status)
 
-    def add_return_subgoals(self):
+    def add_return_subgoals(self):#use gazebo pose and transform
 
         # Step 1: Move up 5 meters
-        self.transPose(0, 0, 5.0, 0, True, False)
+        self.transPose(0, 0, 5.0, 0, True, False, "drone")
 
         # Step 2: Turn to face takeoff position
         dx, dy, dz = self.transform_takeoff_to_drone_pose(self.transform_takeoff_to_drone, 'drone/base_link', self.takeoff_pose_to_local)
-        heading = np.arctan2(dy, dx) / math.pi * 180
+        heading = np.arctan2(dy, dx)
         print("dx %f, dy %f, dz %f, heading %f", dx, dy, dz, heading)
 
-        self.transPose(0, 0, 5.0, heading, False, False)
+        self.transPose(0, 0, 5.0, heading, False, False, "drone")
 
         # Step 3: Move to takeoff position
-        self.transPose(dx, dy, 5.0, heading, True, False)
+        self.transPose(dx, dy, 5.0, heading, True, False, "drone")
 
         # Step 4: Descend to takeoff platform
-        self.transPose(dx, dy, dz, heading, True, True)
+        self.transPose(dx, dy, dz, heading, True, True, "drone")
     
-    def transPose(self, x,y,z, heading, pose_enable, last_waypoint):
+    def transPose(self, x,y,z, heading, pose_enable, last_waypoint, mode, distance_margin=0.08, heading_margin=0.01):
         subgoal = droneWaypoint()
         # set position
         subgoal.pose.position.x = x
         subgoal.pose.position.y = y
         subgoal.pose.position.z = z
         #set orientation from heading yaw angle
-        yaw = heading * math.pi / 180
-        q_new = quaternion_from_euler(0, 0, yaw)
+        q_new = quaternion_from_euler(0, 0, heading)
         subgoal.pose.orientation.x = q_new[0]
         subgoal.pose.orientation.y = q_new[1]
         subgoal.pose.orientation.z = q_new[2]
         subgoal.pose.orientation.w = q_new[3]
-        subgoal.distance_margin = self.distance_margin
-        subgoal.heading_margin = self.heading_margin
-        subgoal.origin = self.origin
+        subgoal.distance_margin = distance_margin
+        subgoal.heading_margin = heading_margin
+        subgoal.origin = mode
         subgoal.planner_seq = 0
         subgoal.planner_name = self.planner_name
 
@@ -187,9 +203,63 @@ class DroneReturn:
         except Exception as e:
             rospy.logerr("Error in transform_pose: %s", e)
 
+
+ #--------------------------mavros method for drone return----------------------------------------------------
+    def log_start_pose(self):
+        self.start_pose = self.drone_pose_to_local
+
+    def drone_mavros_takeoff_pose_callback(self, msg):
+        self.mavros_armed_pose = msg
+        self.mavros_armed_pose_received = True
+
+    def add_mavros_armed_pose(self):
+        # Step 1: Move up 5 meters
+        self.transPose(0, 0, 3.0, 0, True, False, "drone")
+        self.transPose(0, 0, 5.0, 0, True, False, "drone") #use mode method to fly up to 5 meters of current position
+
+        # Step 2: Turn to face takeoff position
+        x_start = self.start_pose.pose.position.x
+        y_start = self.start_pose.pose.position.y
+        x_armed = self.mavros_armed_pose.pose.position.x
+        y_armed = self.mavros_armed_pose.pose.position.y
+        dx = x_armed - x_start
+        dy = y_armed - y_start
+        heading = np.arctan2(dy, dx)
+        print("dx %f, dy %f, heading %f", dx, dy, heading)
+        self.transPose(self.start_pose.pose.position.x, self.start_pose.pose.position.y, self.start_pose.pose.position.z+5, heading, False, False, "local_origin")
+
+        self.add_mid_point(3, heading)
+
+        #Step 3: Move to takeoff position in x y plane
+        self.transPose(self.mavros_armed_pose.pose.position.x, self.mavros_armed_pose.pose.position.y, self.start_pose.pose.position.z+5, heading, True, False, "local_origin", 0.3, 0.05)
+
+        #Step 4: Descend to takeoff platform
+        self.transPose(self.mavros_armed_pose.pose.position.x, self.mavros_armed_pose.pose.position.y, self.mavros_armed_pose.pose.position.z, 0, True, True, "local_origin")
+
+    def add_mid_point(self, midpoint_num, heading):
+        if midpoint_num <= 0:
+            return
+        
+        x_start = self.start_pose.pose.position.x
+        y_start = self.start_pose.pose.position.y
+        x_armed = self.mavros_armed_pose.pose.position.x
+        y_armed = self.mavros_armed_pose.pose.position.y
+        z_start = self.start_pose.pose.position.z + 5  # Elevation to 5 meters above the starting position
+        
+        dx = (x_armed - x_start) / (midpoint_num + 1)
+        dy = (y_armed - y_start) / (midpoint_num + 1)
+
+        for i in range(1, midpoint_num + 1):
+            x_mid = x_start + dx * i
+            y_mid = y_start + dy * i
+            self.transPose(x_mid, y_mid, z_start, heading, True, False, "local_origin", 0.3, 0.05)
+
+        
 if __name__ == "__main__":
     rospy.init_node("drone_return")
-    drone_return = DroneReturn()
+    origin = rospy.get_param('~origin', 'drone')
+    print(origin)
+    drone_return = DroneReturn(mode=origin)
     try:
         rospy.spin()
     except KeyboardInterrupt:
