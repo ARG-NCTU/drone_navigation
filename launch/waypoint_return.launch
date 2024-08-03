@@ -1,0 +1,12 @@
+<launch>
+     <!-- mode: drone (position relative to current drone state) / local_position (position relative with mavros) -->
+    <arg name="mode" default="drone"/>
+
+     <!--map (use gazebo pose only affect when using mode=drone) -->
+    <arg name="source_frame" default="map"/>
+
+    <node name="drone_return" pkg="drone_navigation" type="drone_return.py" output="screen">
+        <param name="origin" value="$(arg mode)"/>
+        <param name="source_frame" value="$(arg source_frame)"/>
+    </node>
+</launch>
