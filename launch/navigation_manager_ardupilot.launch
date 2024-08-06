@@ -1,9 +1,12 @@
 <launch>
     <arg name="height_estimate" default="false"/>
-    <arg name="node_name" default="navigation_manager"/>
-    <node pkg="drone_navigation" type="navigation_manager" name="$(arg node_name)" clear_params="true" output="screen">
+    <arg name="node_name" default="navigation_manager_ardupilot"/>
+    <node pkg="drone_navigation" type="navigation_manager_ardupilot" name="$(arg node_name)" clear_params="true" output="screen">
         <param name="height_estimate" value="$(arg height_estimate)"/>
         <remap from="height_offset" to="height_estimator/relative_height"/>
+        <remap from="velocity/from_user" to="drone_twist"/>
+        <remap from="velocity_output" to="mavros/setpoint_velocity/cmd_vel_unstamped"/>
+
     </node>
     <node pkg="drone_navigation" type="visualize_path" name="visualize_path" clear_params="true" output="screen">
     </node>

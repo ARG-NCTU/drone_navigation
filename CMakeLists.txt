@@ -133,6 +133,7 @@ add_executable(waypoint_nav src/waypoint_nav.cpp)
 add_executable(waypoint_cruise src/waypoint_cruise.cpp)
 add_executable(waypoint_landing src/waypoint_landing.cpp)
 add_executable(navigation_manager src/navigation_manager.cpp)
+add_executable(navigation_manager_ardupilot src/navigation_manager_ardupilot.cpp)
 add_executable(visualize_path src/visualize_path.cpp)
 
 target_link_libraries(waypoint_nav ${catkin_LIBRARIES})
@@ -142,6 +143,8 @@ add_dependencies(waypoint_cruise ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EX
 target_link_libraries(waypoint_landing ${catkin_LIBRARIES})
 target_link_libraries(navigation_manager ${catkin_LIBRARIES})
 add_dependencies(navigation_manager ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(navigation_manager_ardupilot ${catkin_LIBRARIES})
+add_dependencies(navigation_manager_ardupilot ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(visualize_path ${catkin_LIBRARIES})
 
 ## Declare a C++ library
