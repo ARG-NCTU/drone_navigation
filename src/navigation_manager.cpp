@@ -585,11 +585,11 @@ void Navigation::navigation() {
                 cmdRotate();
                 pub_subgoal_visual.publish(pub_msg_goal_visual);
             }
-        } else {
+        } else{
             // 2-2: Maintain or resume last known stable position using keep_pose (maybe the last goal point or the human control last point)  
             ROS_INFO("No active waypoint commands; maintaining position using keep_pose");
             cmdKeep();
-             geometry_msgs::PoseStamped pub_msg_goal_visual;
+            geometry_msgs::PoseStamped pub_msg_goal_visual;
             pub_msg_goal_visual.header.frame_id = "local_origin";
             pub_msg_goal_visual.pose.position.x = 0.0f;
             pub_msg_goal_visual.pose.position.y = 0.0f;
