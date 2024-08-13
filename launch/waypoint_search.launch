@@ -42,4 +42,10 @@
     <node pkg="behavior_tree_extra" type="buffer_reset" name="$(arg node_name)_reset" clear_params="true" output="screen">
         <remap from="state_manager/reset" to="state_manager/reset_$(arg node_name)"/>
     </node>
+
+    <node pkg="drone_navigation" type="visualize_path_unity.py" name="draw_unity_path">
+        <param name="node_name" value="$(arg node_name)"/>
+        <param name="waypoint_file_path" value="$(find drone_navigation)/config/$(arg script_file)"/>
+        <remap from="/waypoint_planner/waypoints_array" to="/visualization_trajectory_waypoints"/>
+    </node>
 </launch>
