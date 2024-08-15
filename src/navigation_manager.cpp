@@ -20,6 +20,7 @@ class Navigation{
         ros::Publisher pub_goalpoint;
         ros::Publisher pub_is_finish;
         ros::Publisher pub_subgoal_visual;
+        ros::Publisher pub_twist;
         ros::Subscriber sub_subgoal;
         ros::Subscriber sub_pose;
         ros::Subscriber sub_height_offset;
@@ -84,11 +85,12 @@ Navigation :: Navigation() : condition("navigation_running"){
     pub_goalpoint = n.advertise<geometry_msgs::PoseStamped>("mavros/setpoint_position/local", 10);
     pub_is_finish = n.advertise<std_msgs::Bool>("navigation_manager/is_finish", 10);
     pub_subgoal_visual = n.advertise<geometry_msgs::PoseStamped>("drone_waypoint/visual/local", 10);
+    pub_twist = n.advertise<geometry_msgs::Twist>("velocity_output", 10);
     sub_subgoal = n.subscribe<drone_navigation::droneWaypoint>("waypoint_planner/drone_waypoint", 1,  &Navigation::subgoalCallback, this);
     sub_pose = n.subscribe<geometry_msgs::PoseStamped>("mavros/local_position/pose", 1,  &Navigation::positionCallback, this);
     sub_height_offset = n.subscribe<std_msgs::Float32>("height_offset", 1,  &Navigation::heightCallback, this);
     //sub_height_offset = n.subscribe<std_msgs::Float32>("height_offset", 1,  &Navigation::heightCallback, this);
-    sub_twist = n.subscribe<geometry_msgs::Twist>("mavros/setpoint_velocity/cmd_vel_unstamped", 1,  &Navigation::twistCallback, this);
+    sub_twist = n.subscribe<geometry_msgs::Twist>("velocity/from_user", 1,  &Navigation::twistCallback, this);
     last_twist_time = ros::Time::now();
 }
 
@@ -603,6 +605,15 @@ void Navigation::navigation() {
     } else {
         // 1: Human control detected
             ROS_INFO("Controller is activated...Disable Position Navigation");
+            geometry_msgs::Twist twist_msg;
+            twist_msg.linear.x = current_twist[0];
+            twist_msg.linear.y = current_twist[1];
+            twist_msg.linear.z = current_twist[2];
+            twist_msg.angular.x = current_twist[3];
+            twist_msg.angular.y = current_twist[4];
+            twist_msg.angular.z = current_twist[5];
+            pub_twist.publish(twist_msg);
+            
     }
     conditionSet(condition_status);
     rate.sleep();
