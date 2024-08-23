@@ -1,0 +1,56 @@
+<launch>
+    <!-- multiple times of explore forward -->
+    <include file="$(find drone_navigation)/launch/explore_forward.launch">
+        <arg name="node_name" value="explore_forward"/>
+        <arg name="script_file" value="script_forward.yaml"/>
+    </include>
+    <include file="$(find drone_navigation)/launch/explore_forward.launch">
+        <arg name="node_name" value="explore_forward_1"/>
+        <arg name="script_file" value="script_forward.yaml"/>
+    </include>
+    <include file="$(find drone_navigation)/launch/explore_forward.launch">
+        <arg name="node_name" value="explore_forward_2"/>
+        <arg name="script_file" value="script_forward.yaml"/>
+    </include>
+    <include file="$(find drone_navigation)/launch/explore_forward.launch">
+        <arg name="node_name" value="explore_forward_3"/>
+        <arg name="script_file" value="script_forward.yaml"/>
+    </include>
+    <include file="$(find drone_navigation)/launch/explore_forward.launch">
+        <arg name="node_name" value="explore_forward_4"/>
+        <arg name="script_file" value="script_forward.yaml"/>
+    </include>
+    <include file="$(find drone_navigation)/launch/explore_forward.launch">
+        <arg name="node_name" value="explore_forward_5"/>
+        <arg name="script_file" value="script_forward.yaml"/>
+    </include>
+
+    <!-- multiple times of rotate left-->
+    <include file="$(find drone_navigation)/launch/rotate_left.launch">
+        <arg name="node_name" value="rotate_left"/>
+        <arg name="script_file" value="script_rotate_left.yaml"/>
+    </include>
+    <include file="$(find drone_navigation)/launch/rotate_left.launch">
+        <arg name="node_name" value="rotate_left_1"/>
+        <arg name="script_file" value="script_rotate_left.yaml"/>
+    </include>
+    <include file="$(find drone_navigation)/launch/rotate_left.launch">
+        <arg name="node_name" value="rotate_left_2"/>
+        <arg name="script_file" value="script_rotate_left.yaml"/>
+    </include>
+    
+    <!-- multiple times of rotate right-->
+    <include file="$(find drone_navigation)/launch/rotate_right.launch">
+        <arg name="node_name" value="rotate_right"/>
+        <arg name="script_file" value="script_rotate_right.yaml"/>
+    </include>
+    <include file="$(find drone_navigation)/launch/rotate_right.launch">
+        <arg name="node_name" value="rotate_right_1"/>
+        <arg name="script_file" value="script_rotate_right.yaml"/>
+    </include>
+    <include file="$(find drone_navigation)/launch/rotate_right.launch">
+        <arg name="node_name" value="rotate_right_2"/>
+        <arg name="script_file" value="script_rotate_right.yaml"/>
+    </include>
+
+</launch>
