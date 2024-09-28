@@ -12,6 +12,8 @@
 #include <behavior_tree/behavior_tree.h>
 #include <drone_navigation/droneWaypoint.h>
 
+#include <std_srvs/SetBool.h>
+
 #define PI 3.14159265
 
 using namespace std; 
@@ -29,10 +31,11 @@ class Waypoint{
         ros::NodeHandle n;
         ros::Publisher pub_subgoal;
         ros::Publisher pub_explore_status;
-        ros::Subscriber sub_state;
+        // ros::Subscriber sub_state; // change as a service server
+        ros::ServiceServer srv_state;  // Service server for handling state requests
         ros::Subscriber sub_goal;
-        
 
+        
         drone_navigation::droneWaypoint pub_current_subgoal;
 
         XmlRpc::XmlRpcValue xml_waypoint;
@@ -81,8 +84,9 @@ class Waypoint{
         void transPose(float *waypoint);
         void transToward(float *waypoint);
 
-        void stateCallback(const std_msgs::Bool::ConstPtr& msg);
+        // void stateCallback(const std_msgs::Bool::ConstPtr& msg);
         void goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg);
+        bool stateServiceCallback(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res);
 
         void publishGoal();
         
@@ -100,16 +104,39 @@ Waypoint :: Waypoint() : action(ros::this_node::getName()),
                         condition_running(appendString(ros::this_node::getName(), (string)"_running")){
     pub_subgoal = n.advertise<drone_navigation::droneWaypoint>("waypoint_planner/drone_waypoint", 10);
     pub_explore_status = n.advertise<std_msgs::Bool>("waypoint_planner/finish_explore", 10);
-    sub_state = n.subscribe<std_msgs::Bool>("navigation_manager/is_finish", 1, &Waypoint::stateCallback, this);
+    // sub_state = n.subscribe<std_msgs::Bool>("navigation_manager/is_finish", 1, &Waypoint::stateCallback, this);
+    
+    // Set up the service server dynamically using the node's namespace
+    string node_ns = ros::this_node::getName();  // Get the namespace (which corresponds to planner_name)
+    string service_name = "/" + node_ns + "/navigation_manager/is_finish";  // Dynamically construct the service name
+
+    // Advertise the service server with the dynamic service name
+    srv_state = n.advertiseService(service_name, &Waypoint::stateServiceCallback, this);
+
+
     sub_goal = n.subscribe<geometry_msgs::PoseStamped>("move_base_simple/goal", 1, &Waypoint::goalCallback, this);
 }
 
-void Waypoint :: stateCallback(const std_msgs::Bool::ConstPtr& msg){
-    if(waypoint_running){
-        navigation_manager_status = msg->data;
+// void Waypoint :: stateCallback(const std_msgs::Bool::ConstPtr& msg){
+//     if(waypoint_running){
+//         navigation_manager_status = msg->data;
+//     }
+//     return;
+// }
+bool Waypoint::stateServiceCallback(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res) {
+    if (waypoint_running) {
+        navigation_manager_status = req.data;  // Update the internal state based on the service request
+        res.success = true;  // Indicate successful processing of the request
+        res.message = "State updated successfully";
+        ROS_INFO("Received request: %s", req.data ? "true" : "false");
+    } else {
+        res.success = false;
+        res.message = "Waypoint is not running";
     }
-    return;
+    return true;  // Return true to indicate the service call was handled
 }
+
+
 
 void Waypoint :: goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg){
     if(!script_enable){

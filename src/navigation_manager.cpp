@@ -10,6 +10,8 @@
 #include <behavior_tree/behavior_tree.h>
 #include <drone_navigation/droneWaypoint.h>
 
+#include <std_srvs/SetBool.h> 
+
 #define PI 3.14159265
 
 using namespace std; 
@@ -18,7 +20,9 @@ class Navigation{
     private:
         ros::NodeHandle n;
         ros::Publisher pub_goalpoint;
-        ros::Publisher pub_is_finish;
+        // ros::Publisher pub_is_finish; //change to rosservice client 
+        ros::ServiceClient subgoal_is_finish;
+
         ros::Publisher pub_subgoal_visual;
         ros::Publisher pub_twist;
         ros::Subscriber sub_subgoal;
@@ -83,15 +87,18 @@ class Navigation{
 
 Navigation :: Navigation() : condition("navigation_running"){
     pub_goalpoint = n.advertise<geometry_msgs::PoseStamped>("mavros/setpoint_position/local", 10);
-    pub_is_finish = n.advertise<std_msgs::Bool>("navigation_manager/is_finish", 10);
+    // pub_is_finish = n.advertise<std_msgs::Bool>("navigation_manager/is_finish", 10); //change to rosservice client will dynmically init in margineCheck
     pub_subgoal_visual = n.advertise<geometry_msgs::PoseStamped>("drone_waypoint/visual/local", 10);
     pub_twist = n.advertise<geometry_msgs::Twist>("velocity_output", 10);
     sub_subgoal = n.subscribe<drone_navigation::droneWaypoint>("waypoint_planner/drone_waypoint", 1,  &Navigation::subgoalCallback, this);
     sub_pose = n.subscribe<geometry_msgs::PoseStamped>("mavros/local_position/pose", 1,  &Navigation::positionCallback, this);
     sub_height_offset = n.subscribe<std_msgs::Float32>("height_offset", 1,  &Navigation::heightCallback, this);
-    //sub_height_offset = n.subscribe<std_msgs::Float32>("height_offset", 1,  &Navigation::heightCallback, this);
     sub_twist = n.subscribe<geometry_msgs::Twist>("velocity/from_user", 1,  &Navigation::twistCallback, this);
     last_twist_time = ros::Time::now();
+}
+
+std::string getServiceNamespace(const std::string& planner_name) {
+    return "/" + planner_name + "/navigation_manager/is_finish";
 }
 
 
@@ -476,11 +483,19 @@ void Navigation :: marginCheck(){ // need to consider height offset
     all_subgoal_finished = false;
 
     if (checkbit==0){ return;}
-
-    cout << "DIST current: " << distanceP2P(current_pose, current_goal) << endl;
-    cout << "DIST margin : " << distance_margin << endl;
-    cout << "HEAD current: " << headingP2P(current_pose, current_goal) << endl;
-    cout << "HEAD margin : " << heading_margin << endl;
+    if(pose_enable){ //if moving pose (larger margin)
+        cout << "DIST current: " << distanceP2P(current_pose, current_goal) << endl;
+        cout << "DIST margin : " << 1.5*distance_margin << endl;
+        cout << "HEAD current: " << headingP2P(current_pose, current_goal) << endl;
+        cout << "HEAD margin : " << 2*heading_margin << endl;
+    }
+    else{
+        cout << "DIST current: " << distanceP2P(current_pose, current_goal) << endl;
+        cout << "DIST margin : " << distance_margin << endl;
+        cout << "HEAD current: " << headingP2P(current_pose, current_goal) << endl;
+        cout << "HEAD margin : " << heading_margin << endl;
+    }
+    
 
     
 
@@ -517,9 +532,22 @@ void Navigation :: marginCheck(){ // need to consider height offset
 
 
     // Publish that the current goal is achieved
-    std_msgs::Bool pub_msg_state;
-    pub_msg_state.data = true;
-    pub_is_finish.publish(pub_msg_state);
+    // std_msgs::Bool pub_msg_state;
+    // pub_msg_state.data = true;
+    // pub_is_finish.publish(pub_msg_state);
+    
+    //change to rosservice client to report the subgoal is finished
+    // Set the service client dynamically based on the planner_name
+    std::string service_name = getServiceNamespace(planner_name);
+    subgoal_is_finish = n.serviceClient<std_srvs::SetBool>(service_name);
+    std_srvs::SetBool srv;
+    srv.request.data = true;
+    if (subgoal_is_finish.call(srv)) {
+        ROS_INFO("Subgoal is finished for %s", planner_name.c_str());
+    } else {
+        ROS_ERROR("Failed to call service %s", service_name.c_str());
+    }
+
     ROS_INFO("tick:   %s", planner_name.c_str());
 
     for (int i = 0; i < 7; i++) {

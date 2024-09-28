@@ -10,6 +10,7 @@ import math
 import tf
 from tf.transformations import quaternion_matrix, translation_matrix, concatenate_matrices, quaternion_from_euler
 import time
+from std_srvs.srv import SetBool, SetBoolResponse
 FAIL = 0
 RUNNING = 1
 SUCCESS = 2
@@ -39,9 +40,10 @@ class DroneReturn:
             "waypoint_planner/drone_waypoint", droneWaypoint, queue_size=10
         )
 
-        self.waypoint_isfinish_sub = rospy.Subscriber(
-            "navigation_manager/is_finish", Bool, self.waypoint_isfinish_callback, queue_size=1
-        )
+        # self.waypoint_isfinish_sub = rospy.Subscriber(
+        #     "navigation_manager/is_finish", Bool, self.waypoint_isfinish_callback, queue_size=1
+        # )
+        self.waypoint_isfinish_service = rospy.Service("/{}/navigation_manager/is_finish".format(node_name), SetBool, self.waypoint_isfinish_service_callback)
 
         self.timer = rospy.Timer(rospy.Duration(0.1), self.pub_subgoal_callback)
 
@@ -96,9 +98,19 @@ class DroneReturn:
                 rospy.logerr("Mode not supported")
                 return
 
-    def waypoint_isfinish_callback(self, msg):
-        self.waypoint_isfinish = msg
-
+    # def waypoint_isfinish_callback(self, msg):
+    #     self.waypoint_isfinish = msg
+    def waypoint_isfinish_service_callback(self, req):
+        # Set waypoint_isfinish based on the service request
+        self.waypoint_isfinish = req
+        rospy.loginfo("Waypoint is_finish received: %s", self.waypoint_isfinish)
+        
+        # Build and return the response
+        response = SetBoolResponse()
+        response.success = True
+        response.message = "Waypoint status updated"
+        return response
+    
     def pub_subgoal_callback(self, event):
         if not (self.drone_pose_to_local_received and self.takeoff_pose_to_local_received) or not (self.drone_pose_to_local_received and self.mavros_armed_pose_received):
             rospy.logwarn_throttle(1, "Waiting for drone or takeoff pose to be received")
